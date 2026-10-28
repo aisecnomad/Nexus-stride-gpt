@@ -516,7 +516,10 @@ def estimate_tokens(text, model="gpt-5.2"):
         # Try to use tiktoken for accurate estimation
         enc = tiktoken.encoding_for_model(model)
         return len(enc.encode(text))
-    except (ImportError, KeyError, ValueError):
+    except Exception:
+        # Includes the network error tiktoken raises when it can't download an
+        # encoding on first use — expected behind an egress allow-list — so
+        # GitHub analysis degrades to an estimate instead of failing.
         # Fall back to character-based approximation
         # Different languages have different token densities
         # English: ~4 chars per token, Chinese: ~1-2 chars per token
