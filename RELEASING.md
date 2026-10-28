@@ -39,9 +39,11 @@ Settings → Secrets and variables → Actions:
 ## Cutting a release
 
 1. Bump `version` in `pyproject.toml`.
-2. Add the release notes to the top of `README.md` and update any version-pinned
-   references (e.g. `docker pull mrwadams/stridegpt:latest` examples stay
-   correct automatically; the `latest` tag is republished each release).
+2. Move the **Unreleased** entries in `CHANGELOG.md` under a heading for the new
+   version, refresh the short *What's new* list near the top of `README.md`, and
+   update any version-pinned references (e.g. `docker pull
+   mrwadams/stridegpt:latest` examples stay correct automatically; the `latest`
+   tag is republished each release).
 3. Commit on `master` (via PR), then tag and push:
 
    ```bash

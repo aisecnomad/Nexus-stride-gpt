@@ -49,7 +49,7 @@ STRIDE GPT requires API keys for various LLM providers. Follow these practices t
 
 ### Deployment Security
 
-When deploying STRIDE GPT:
+For a reference architecture (identity-aware proxy with OIDC, TLS 1.3 and mTLS, egress allow-listing, logging, and CI usage), see the [Deployment hardening guide](docs/deployment-hardening.md). In summary, when deploying STRIDE GPT:
 
 1. **Network Security**
    - Deploy behind authentication/authorization if hosting publicly
