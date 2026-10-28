@@ -10,7 +10,10 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 import base64
+import csv
 import html
+import io
+import json
 import os
 import re
 from collections import defaultdict
@@ -94,10 +97,18 @@ from threat_model import (
     json_to_markdown,
 )
 
+from stride_gpt.core.controls import (
+    COMPLIANCE_ROW_FIELDS,
+    compliance_rows,
+    compliance_summary,
+    keep_known_controls,
+    load_catalog,
+)
 from stride_gpt.core.drawio_parser import drawio_to_prompt_section
 from stride_gpt.core.json_extract import extract_json_object
 from stride_gpt.core.llm import call_llm
 from stride_gpt.core.prompts import create_dfd_prompt
+from stride_gpt.core.report_utils import compliance_section_lines
 from stride_gpt.core.schemas import LLMConfig
 
 # ------------------ Helper Functions ------------------ #
@@ -1225,8 +1236,16 @@ deepseek_api_key = st.session_state.get("deepseek_api_key", "")
 
 # ------------------ Main App UI ------------------ #
 
-tab1, tab2, dfd_tab, tab3, tab4, tab5 = st.tabs(
-    ["Threat Model", "Attack Tree", "Data Flow Diagram", "Mitigations", "DREAD", "Test Cases"]
+tab1, tab2, dfd_tab, tab3, tab4, tab5, compliance_tab = st.tabs(
+    [
+        "Threat Model",
+        "Attack Tree",
+        "Data Flow Diagram",
+        "Mitigations",
+        "DREAD",
+        "Test Cases",
+        "Compliance",
+    ]
 )
 
 with tab1:
@@ -1461,6 +1480,19 @@ understanding possible vulnerabilities and attack vectors. Use this tab to gener
             key="authentication",
         )
 
+        st.checkbox(
+            "Map threats to security controls and compliance frameworks",
+            value=True,
+            key="map_controls",
+            help=(
+                "Tags each threat with controls from the STRIDE-GPT control catalogue "
+                "(identity, data protection, network, logging, AppSec, AI and agentic AI). "
+                "The Compliance tab then maps them to AIUC-1, ISO/IEC 42001, the EU AI Act "
+                "and ISO/IEC 27001. Adds the catalogue to the prompt, so it uses a few "
+                "thousand more input tokens."
+            ),
+        )
+
         # Show guidance for GenAI/Agentic applications
         if app_type == "Generative AI application":
             st.markdown("---")
@@ -1515,6 +1547,7 @@ understanding possible vulnerabilities and attack vectors. Use this tab to gener
             sensitive_data,
             _effective_app_input,
             confirmed_dfd=st.session_state.get("confirmed_dfd"),
+            include_controls=st.session_state.get("map_controls", True),
         )
 
         # Clear thinking content when switching models or starting a new operation
@@ -1575,6 +1608,10 @@ understanding possible vulnerabilities and attack vectors. Use this tab to gener
                     # Access the threat model and improvement suggestions from the parsed content
                     threat_model = model_output.get("threat_model", [])
                     improvement_suggestions = model_output.get("improvement_suggestions", [])
+                    # Only catalogue control IDs survive, so the Compliance tab
+                    # and its exports never show an ID the model invented.
+                    for threat in threat_model or []:
+                        keep_known_controls(threat)
 
                     # Save the threat model and suggestions to session state for later use
                     st.session_state["threat_model"] = threat_model
@@ -2357,3 +2394,80 @@ scenarios.
 
         else:
             st.error("Please generate a threat model first before requesting test cases.")
+
+# ------------------ Controls & Compliance Mapping ------------------ #
+
+with compliance_tab:
+    st.markdown(
+        """
+Use this tab to see which security controls would mitigate the threats in your threat model, and which requirements in AIUC-1, ISO/IEC 42001,
+the EU AI Act and ISO/IEC 27001 those controls address. The model picks each threat's controls from the STRIDE-GPT control catalogue; the
+framework references are looked up from the catalogue, never generated. Treat the result as a map of where to look, not as a conformity
+assessment.
+"""
+    )
+    st.markdown("""---""")
+
+    compliance_threats = st.session_state.get("threat_model") or []
+    compliance = compliance_summary(compliance_threats)
+    if not compliance_threats:
+        st.info("Generate a threat model on the Threat Model tab first.")
+    elif compliance is None:
+        st.info(
+            "None of the threats in the current threat model carry control IDs. Tick "
+            "**Map threats to security controls and compliance frameworks** on the Threat "
+            "Model tab and generate the threat model again."
+        )
+    else:
+        compliance_markdown = "\n".join(compliance_section_lines(compliance_threats))
+        # Every value rendered here is a validated control ID or text from the
+        # packaged catalogue — no model-written prose reaches this markdown.
+        st.markdown(compliance_markdown)
+
+        csv_buffer = io.StringIO()
+        writer = csv.DictWriter(csv_buffer, fieldnames=COMPLIANCE_ROW_FIELDS)
+        writer.writeheader()
+        writer.writerows(compliance_rows(compliance_threats))
+
+        col_md, col_csv, col_json = st.columns(3)
+        with col_md:
+            st.download_button(
+                label="Download Markdown",
+                data=compliance_markdown,
+                file_name="compliance_mapping.md",
+                mime="text/markdown",
+                key="download_compliance_md",
+            )
+        with col_csv:
+            st.download_button(
+                label="Download CSV",
+                data=csv_buffer.getvalue(),
+                file_name="compliance_mapping.csv",
+                mime="text/csv",
+                key="download_compliance_csv",
+                help="One row per threat, control and framework reference — the shape GRC tools import.",
+            )
+        with col_json:
+            st.download_button(
+                label="Download JSON",
+                data=json.dumps(compliance.to_dict(), indent=2),
+                file_name="compliance_mapping.json",
+                mime="application/json",
+                key="download_compliance_json",
+            )
+
+    with st.expander("About the control catalogue"):
+        _catalog = load_catalog()
+        st.markdown(
+            f"Catalogue version **{_catalog.version}**: {len(_catalog.controls)} controls "
+            "in the domains below. See `docs/controls-catalog.md` and "
+            "`docs/framework-crosswalks.md` in the repository for every control's guidance "
+            "and mappings."
+        )
+        st.markdown(
+            "\n".join(
+                f"- **{d.key} — {d.title}** "
+                f"({sum(1 for c in _catalog.controls if c.domain == d.key)} controls): {d.summary}"
+                for d in _catalog.domains
+            )
+        )

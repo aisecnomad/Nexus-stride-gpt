@@ -113,6 +113,7 @@ include = ["stride_gpt*"]
 
 [tool.setuptools.package-data]
 "stride_gpt.core.prompts.threat_model" = ["*.md"]
+"stride_gpt.core.controls" = ["*.toml"]
 
 [tool.bandit]
 # Replaces the old .bandit INI file, whose entries never applied: it used

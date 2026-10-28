@@ -24,6 +24,7 @@ from stride_gpt.agent.tools import (
     THREAT_ARG_TO_FIELD,
     execute_tool,
 )
+from stride_gpt.core.controls import split_control_ids
 from stride_gpt.core.json_extract import extract_json_object
 from stride_gpt.core.llm import call_llm, call_llm_with_tools
 from stride_gpt.core.prompts import base_system_prompt
@@ -74,7 +75,8 @@ Respond with a JSON object:
             "Potential Impact": "Systemic impact",
             "Affected Subsystems": ["subsystem1", "subsystem2"],
             "Related Threats": ["ids of the subsystem threats summarised — required for an aggregation, optional for an emergent threat"],
-            "evidence": [{"path": "relative/path.py", "snippet": "code copied from the findings — required for an emergent threat, omit for an aggregation"}]
+            "evidence": [{"path": "relative/path.py", "snippet": "code copied from the findings — required for an emergent threat, omit for an aggregation"}],
+            "CONTROLS": ["control IDs that would mitigate an emergent threat — reuse only IDs that appear in the findings' CONTROLS; omit if none apply"]
         }
     ]
 }"""
@@ -634,6 +636,29 @@ def _threat_arg(args: dict[str, Any], name: str) -> Any:
     return args.get(name.replace("_", " ").title())
 
 
+def _apply_control_ids(threat: dict[str, Any]) -> str:
+    """Keep only catalogue control IDs on a threat; say what was dropped.
+
+    Same contract as evidence: an invented ID isn't recorded, and the tool
+    result tells the model so it can pick a real one next time rather than
+    repeating the mistake on every threat. Returns the note to append to the
+    tool result, or "" when every ID was valid.
+    """
+    if "CONTROLS" not in threat:
+        return ""
+    known, rejected = split_control_ids(threat["CONTROLS"])
+    if known:
+        threat["CONTROLS"] = known
+    else:
+        del threat["CONTROLS"]
+    if not rejected:
+        return ""
+    return (
+        f" Not recorded as controls (not in the catalogue): {', '.join(rejected)}."
+        " Use only IDs from the security_controls or ai_controls cards."
+    )
+
+
 class SubsystemAbortedError(Exception):
     """A subsystem raised partway through, carrying what it had already found.
 
@@ -787,6 +812,7 @@ class _SubsystemRun:
             value = _threat_arg(args, arg)
             if value not in (None, "", []):
                 threat[field] = value
+        controls_note = _apply_control_ids(threat)
 
         checks = verify_evidence(self.target_path, args.get("evidence"))
         # Omitted rather than empty, so a threat with no evidence is the same
@@ -804,6 +830,7 @@ class _SubsystemRun:
         return (
             f"Recorded threat #{len(self.threats)} ({threat_type}). "
             + summarise_checks(checks)
+            + controls_note
         )
 
     def _handle_exploration(self, tc: ToolCallResult) -> str:
@@ -1186,6 +1213,9 @@ def classify_synthesis(
         label = f"{item.get('Threat Type', 'Unknown')!r}"
         entry = {k: v for k, v in item.items() if k != "evidence"}
         entry["Classification"] = kind
+        # The architect gets no tool result to learn from, so the note is
+        # discarded; an invented ID is simply not recorded.
+        _apply_control_ids(entry)
 
         if kind == AGGREGATION:
             linked = _known_links(item.get("Related Threats"), known_ids)

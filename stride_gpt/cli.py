@@ -1346,6 +1346,156 @@ def reports(
             console.print(rendered)
 
 
+class FrameworkChoice(StrEnum):
+    """Frameworks the control catalogue maps to, as typed on the command line."""
+
+    aiuc_1 = "aiuc-1"
+    iso_42001 = "iso-42001"
+    eu_ai_act = "eu-ai-act"
+    iso_27001 = "iso-27001"
+
+    @property
+    def key(self) -> str:
+        return self.value.replace("-", "_")
+
+
+@app.command()
+def controls(
+    control_id: Annotated[str | None, typer.Argument(help="Show one control in full, e.g. IAM-05.")] = None,
+    domain: Annotated[str | None, typer.Option("-d", "--domain", help="List one domain: IAM, DAT, NET, LOG, APP, AI, AGT or GOV.")] = None,
+    framework: Annotated[FrameworkChoice | None, typer.Option("--framework", help="Show which controls address each requirement of a framework.")] = None,
+    report: Annotated[Path | None, typer.Option("--report", help="Map a saved report (JSON) to its controls and framework requirements.")] = None,
+    output: Annotated[Path | None, typer.Option("-o", "--output", help="With --report: write the mapping to a file. .csv (default), .json or .md.")] = None,
+) -> None:
+    """Browse the security control catalogue and its framework mappings."""
+    from stride_gpt.core.controls import load_catalog
+
+    catalog = load_catalog()
+    if report is not None:
+        _export_compliance(report, output)
+        return
+    if output is not None:
+        console.print("[red]-o/--output is only used with --report.[/red]")
+        raise typer.Exit(2)
+
+    if control_id:
+        from stride_gpt.core.controls import normalize_control_ids
+        from stride_gpt.core.controls.render import control_markdown_lines
+
+        known = normalize_control_ids(control_id)
+        control = catalog.control(known[0]) if known else None
+        if control is None:
+            console.print(
+                f"[red]No control {control_id!r} in the catalogue.[/red] "
+                "Run [cyan]stride-gpt controls[/cyan] to list them."
+            )
+            raise typer.Exit(1)
+        # The docs break multi-reference cells with <br>, which Rich doesn't render.
+        detail = "\n".join(control_markdown_lines(control)).replace("<br>", "; ")
+        console.print(Markdown(detail))
+        return
+
+    if framework is not None:
+        fw = catalog.framework(framework.key)
+        if fw is None:  # FrameworkChoice and the catalogue have drifted apart
+            console.print(f"[red]Framework {framework.value!r} is not in the catalogue.[/red]")
+            raise typer.Exit(1)
+        by_ref: dict[str, list[str]] = {}
+        for control in catalog.controls:
+            for ref in control.refs_for(fw.key):
+                by_ref.setdefault(ref, []).append(control.id)
+        table = Table(title=f"{fw.full_name}", box=None, padding=(0, 2))
+        table.add_column("Reference", style="bold", no_wrap=True)
+        table.add_column("Requirement")
+        table.add_column("Controls", style="green")
+        for ref, title in fw.refs:
+            table.add_row(ref, title, ", ".join(by_ref.get(ref, [])) or "[dim]—[/dim]")
+        console.print()
+        console.print(table)
+        console.print(f"\n[dim]{fw.note}[/dim]")
+        return
+
+    wanted = domain.upper() if domain else None
+    if wanted and catalog.domain(wanted) is None:
+        keys = ", ".join(d.key for d in catalog.domains)
+        console.print(f"[red]Unknown domain {domain!r}.[/red] Choose one of: {keys}.")
+        raise typer.Exit(1)
+    table = Table(
+        title=f"STRIDE-GPT control catalogue {catalog.version}", box=None, padding=(0, 2)
+    )
+    table.add_column("ID", style="bold", no_wrap=True)
+    table.add_column("Control")
+    table.add_column("STRIDE", no_wrap=True)
+    for fw in catalog.frameworks:
+        table.add_column(fw.name, style="dim")
+    for control in catalog.controls:
+        if wanted and control.domain != wanted:
+            continue
+        table.add_row(
+            control.id,
+            control.name,
+            ", ".join(control.stride),
+            *(", ".join(control.refs_for(fw.key)) for fw in catalog.frameworks),
+        )
+    console.print()
+    console.print(table)
+    console.print(
+        "\n[dim]Details:[/dim] [cyan]stride-gpt controls IAM-05[/cyan]   "
+        "[dim]By framework:[/dim] [cyan]stride-gpt controls --framework eu-ai-act[/cyan]"
+    )
+
+
+def _export_compliance(report_path: Path, output: Path | None) -> None:
+    """Write (or print) the controls-and-frameworks mapping of a saved report."""
+    import csv
+    import io
+
+    from stride_gpt.agent.report import load_report
+    from stride_gpt.core.controls import (
+        COMPLIANCE_ROW_FIELDS,
+        compliance_rows,
+        compliance_summary,
+    )
+    from stride_gpt.core.report_utils import compliance_section_lines
+
+    try:
+        data = load_report(report_path)
+    except (OSError, json.JSONDecodeError) as e:
+        console.print(f"[red]Cannot read report {report_path}: {e}[/red]")
+        raise typer.Exit(1) from e
+    threats = [
+        t for sub in data.get("subsystems") or [] for t in sub.get("threats") or []
+    ] + list(data.get("cross_cutting_threats") or [])
+    summary = compliance_summary(threats)
+    if summary is None:
+        console.print(
+            "[yellow]No threat in this report carries control IDs.[/yellow] Reports from "
+            "runs where the agent loaded the security_controls or ai_controls card do."
+        )
+        raise typer.Exit(1)
+
+    markdown = "\n".join(compliance_section_lines(threats))
+    if output is None:
+        console.print(Markdown(markdown))
+        return
+
+    suffix = output.suffix.lower()
+    if suffix == ".json":
+        rendered = json.dumps(summary.to_dict(), indent=2) + "\n"
+    elif suffix == ".md":
+        rendered = markdown
+    else:
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=COMPLIANCE_ROW_FIELDS)
+        writer.writeheader()
+        writer.writerows(compliance_rows(threats))
+        rendered = buffer.getvalue()
+    if not _prepare_output_dir(output):
+        raise typer.Exit(1)
+    output.write_text(rendered, encoding="utf-8")
+    console.print(f"[green]Compliance mapping written to {output}[/green]")
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

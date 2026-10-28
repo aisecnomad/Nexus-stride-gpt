@@ -24,6 +24,7 @@ THREAT_MODEL_SCHEMA: dict = {
                     "OWASP_LLM": {"type": ["string", "null"]},
                     "OWASP_ASI": {"type": ["string", "null"]},
                     "INSIDER_CATEGORY": {"type": ["string", "null"]},
+                    "CONTROLS": {"type": ["array", "null"], "items": {"type": "string"}},
                 },
                 "required": ["Threat Type", "Scenario", "Potential Impact"],
             },
@@ -70,12 +71,14 @@ def analyze_image(
 def json_to_markdown(threat_model, improvement_suggestions):
     """Render a single-shot threat model as markdown.
 
-    Optional columns (OWASP LLM, OWASP ASI, Insider Category, MITRE ATT&CK)
-    appear only when at least one threat carries a value for them — same
-    conditional shape as the agent's per-subsystem renderer, via shared
-    helpers.
+    Optional columns (OWASP LLM, OWASP ASI, Insider Category, MITRE ATT&CK,
+    Controls) appear only when at least one threat carries a value for them —
+    same conditional shape as the agent's per-subsystem renderer, via shared
+    helpers. Threats that carry controls also get the controls and
+    compliance mapping section.
     """
     from stride_gpt.core.report_utils import (
+        compliance_section_lines,
         detect_extra_columns,
         threat_table_header,
         threat_table_row,
@@ -89,6 +92,11 @@ def json_to_markdown(threat_model, improvement_suggestions):
         threat_table_row(threat, *cols)
         for threat in threat_model
     )
+
+    compliance = compliance_section_lines(threat_model)
+    if compliance:
+        lines.append("")
+        lines.extend(compliance)
 
     lines.extend(["", "", "## Improvement Suggestions", ""])
     lines.extend(f"- {suggestion}" for suggestion in improvement_suggestions)

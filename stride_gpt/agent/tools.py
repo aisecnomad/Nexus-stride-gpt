@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from stride_gpt.core.controls import load_catalog
 from stride_gpt.core.schemas import ToolCallResult
 
 MAX_FILE_SIZE = 50 * 1024  # 50 KB
@@ -485,6 +486,11 @@ INSIDER_CATEGORIES = [
     "Deception & Evasion",
 ]
 AUTONOMY_LEVELS = ["L1", "L2", "L3", "L4"]
+# Every control ID in the catalogue. An enum rather than a free string so
+# providers that enforce tool schemas can't accept an invented ID; the loop
+# still filters what arrives, for the ones that don't.
+CONTROL_IDS = load_catalog().control_ids
+MAX_CONTROLS_PER_THREAT = 6
 
 REPORTING_TOOLS: list[dict[str, Any]] = [
     {
@@ -603,6 +609,16 @@ REPORTING_TOOLS: list[dict[str, Any]] = [
                             "required": ["id"],
                         },
                     },
+                    "controls": {
+                        "type": "array",
+                        "maxItems": MAX_CONTROLS_PER_THREAT,
+                        "description": (
+                            "Catalogue control IDs that would mitigate this threat, most "
+                            "important first (e.g. IAM-05, AGT-05). Set only when the "
+                            "security_controls or ai_controls card is loaded; otherwise omit."
+                        ),
+                        "items": {"type": "string", "enum": CONTROL_IDS},
+                    },
                 },
                 "required": ["threat_type", "scenario", "potential_impact", "evidence"],
             },
@@ -650,6 +666,7 @@ THREAT_ARG_TO_FIELD = {
     "insider_category": "INSIDER_CATEGORY",
     "autonomy_level": "autonomy_level",
     "mitre_attack": "MITRE_ATTACK",
+    "controls": "CONTROLS",
 }
 
 # What the subsystem loop offers: explore the code, then report what you found.
