@@ -6,8 +6,10 @@
   <a href="https://github.com/mrwadams/stride-gpt/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/mrwadams/stride-gpt/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://pypi.org/project/stride-gpt/"><img alt="PyPI" src="https://img.shields.io/pypi/v/stride-gpt"></a>
   <img alt="Python 3.12 | 3.13 | 3.14" src="https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue">
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
+  <a href="LICENSE-MIT"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
+
+> **About this repository.** Nexus-stride-gpt is where we collaborate on enhancements to [mrwadams/stride-gpt](https://github.com/mrwadams/stride-gpt). It holds a snapshot of upstream commit [`8e9fb82`](https://github.com/mrwadams/stride-gpt/commit/8e9fb82a3c99878ec92efa86ab5e704e681f2105) (27 October 2026), followed by the enhancement commits listed under *Unreleased* in the [changelog](CHANGELOG.md). STRIDE GPT is © Matt Adams and released under the MIT License; see [License](#license).
 
 STRIDE GPT is an AI-powered threat modelling tool. Point it at a codebase or describe an application, and it produces a STRIDE threat model. Threats are grounded in code evidence it has verified, annotated with OWASP and MITRE ATT&CK/ATLAS identifiers, tagged with the security controls that would mitigate them, and mapped to **AIUC-1**, **ISO/IEC 42001**, **ISO/IEC 27001** and the **EU AI Act**.
 
@@ -534,4 +536,4 @@ Pull requests are welcome. For major changes, please open an issue first to disc
 
 ## License
 
-[MIT](https://choosealicense.com/licenses/mit/)
+STRIDE GPT is released under the [MIT License](LICENSE-MIT), Copyright (c) 2024 Matt Adams. This repository's top-level [LICENSE](LICENSE) is the Apache License 2.0, and [NOTICE](NOTICE) records the STRIDE GPT attribution.
