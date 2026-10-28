@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a vulnerability
+    url: https://github.com/aisecnomad/Nexus-stride-gpt/blob/main/docs/nexus-workflow.md#security
+    about: Never in a public issue. This page explains where to report privately.
+  - name: STRIDE-GPT upstream issues
+    url: https://github.com/mrwadams/stride-gpt/issues
+    about: Bugs and ideas for upstream code are best tracked where they'll be fixed.

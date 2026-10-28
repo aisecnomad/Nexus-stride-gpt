@@ -1,0 +1,93 @@
+name: Nexus lane guard
+
+# contrib/* branches become pull requests to mrwadams/stride-gpt, so they must
+# be cut from upstream's master. A branch cut from main drags this
+# repository's own files (its Apache-2.0 LICENSE, LICENSE-MIT, NOTICE and
+# more) into the upstream pull request; this check fails it before it gets
+# that far. Other branches pass straight through, so the check is safe to
+# require on main.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  UPSTREAM_URL: https://github.com/mrwadams/stride-gpt.git
+  UPSTREAM_BRANCH: master
+
+jobs:
+  lane:
+    name: Lane guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check that contrib/* carries no Nexus-only files
+        env:
+          # Branch names are attacker-controlled. Pass them through env and
+          # quote them; never interpolate them into the script itself.
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$HEAD_REF" != contrib/* ]]; then
+            echo "'$HEAD_REF' isn't a contrib/* branch, so it isn't headed upstream. Nothing to check."
+            exit 0
+          fi
+
+          # Compare against upstream itself, not upstream-master, which may lag.
+          git fetch --no-tags --quiet "$UPSTREAM_URL" \
+            "+refs/heads/${UPSTREAM_BRANCH}:refs/remotes/upstream/${UPSTREAM_BRANCH}"
+
+          # Files only this repository has. Every branch cut from main carries
+          # LICENSE (Apache-2.0 here, MIT upstream) and LICENSE-MIT, so those
+          # two alone catch one; the rest name what leaked.
+          nexus_only=(
+            LICENSE
+            LICENSE-MIT
+            NOTICE
+            docs/nexus-workflow.md
+            .github/CODEOWNERS
+            .github/pull_request_template.md
+            .github/ISSUE_TEMPLATE
+            ':(glob).github/workflows/nexus-*'
+          )
+
+          # Three dots: what the branch changes since it left upstream, which is
+          # exactly what the upstream pull request would show.
+          leaked="$(git diff --name-only "upstream/${UPSTREAM_BRANCH}...${HEAD_SHA}" -- "${nexus_only[@]}")"
+
+          if [[ -z "$leaked" ]]; then
+            echo "OK: $HEAD_REF carries no Nexus-only files."
+            exit 0
+          fi
+
+          {
+            echo "## Lane guard failed"
+            echo
+            echo "\`$HEAD_REF\` is headed upstream, but it changes files that only this repository has:"
+            echo
+            echo '```'
+            echo "$leaked"
+            echo '```'
+            echo
+            echo "The branch was probably cut from \`main\`. Move your own commits onto upstream's \`master\`:"
+            echo
+            echo '```bash'
+            echo 'git fetch upstream'
+            echo 'git fetch origin'
+            echo "git rebase --onto upstream/master origin/main $HEAD_REF"
+            echo "git push --force-with-lease origin $HEAD_REF"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error title=Lane guard::This contrib/* branch carries Nexus-only files. The job summary shows how to fix it."
+          exit 1
