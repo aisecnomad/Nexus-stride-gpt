@@ -19,6 +19,7 @@ from stride_gpt.agent.tools import AGENT_TOOLS, execute_tool
 from stride_gpt.core.controls import keep_known_controls
 from stride_gpt.core.json_extract import extract_json_object
 from stride_gpt.core.llm import call_llm, call_llm_with_tools
+from stride_gpt.core.mitre import normalize_threat_mitre
 from stride_gpt.core.prompts import quick_base_prompt
 from stride_gpt.core.schemas import LLMConfig, ModelPair, ThreatModelOutput
 
@@ -168,6 +169,7 @@ def _parse_threat_model(content: str) -> ThreatModelOutput | None:
         # control ID shouldn't reach it.
         for threat in threats:
             keep_known_controls(threat)
+            threat.update(normalize_threat_mitre(threat))
     return ThreatModelOutput(
         threat_model=threats,
         improvement_suggestions=data.get("improvement_suggestions", []),

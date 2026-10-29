@@ -11,6 +11,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 import base64
 import csv
+import hashlib
 import html
 import io
 import json
@@ -70,7 +71,12 @@ from mitigations import (
     get_mitigations_mistral,
 )
 from openai import OpenAI
-from provider_keys import PROVIDER_API_KEY_STATE
+from provider_keys import (
+    PROVIDER_API_KEY_STATE,
+    has_server_api_key,
+    resolve_github_api_key,
+    resolve_provider_api_key,
+)
 from test_cases import (
     create_test_cases_prompt,
     get_test_cases,
@@ -107,6 +113,7 @@ from stride_gpt.core.controls import (
 from stride_gpt.core.drawio_parser import drawio_to_prompt_section
 from stride_gpt.core.json_extract import extract_json_object
 from stride_gpt.core.llm import call_llm
+from stride_gpt.core.markdown_safety import sanitize_markdown
 from stride_gpt.core.prompts import create_dfd_prompt
 from stride_gpt.core.report_utils import compliance_section_lines
 from stride_gpt.core.schemas import LLMConfig
@@ -198,11 +205,11 @@ def build_guided_description_draft():
 
 
 def resolve_active_llm_config(*, response_format="text"):
-    """Build an LLMConfig for the provider/model/key currently in session state.
+    """Build an LLMConfig using the active model and a server-resolved key.
 
-    Reads everything from session state so callers outside ``main()`` (e.g. the
-    guided-description builder) can reach the active model. Returns ``None`` when
-    no usable key is available, letting callers fall back gracefully.
+    The provider and user override come from session state; operator keys stay
+    in the environment. Returns ``None`` when no usable key is available,
+    letting callers such as the guided-description builder fall back gracefully.
     """
     provider = st.session_state.get("model_provider", "OpenAI API")
     model_name = st.session_state.get("selected_model", "")
@@ -214,10 +221,7 @@ def resolve_active_llm_config(*, response_format="text"):
         api_key = st.session_state.get("lm_studio_api_key", "") or "not-needed"
         api_base = st.session_state.get("lm_studio_endpoint", "http://localhost:1234")
     else:
-        state_key = PROVIDER_API_KEY_STATE.get(provider)
-        if not state_key:
-            return None
-        api_key = st.session_state.get(state_key, "")
+        api_key = resolve_provider_api_key(provider, st.session_state)
         if not api_key:
             return None
 
@@ -392,7 +396,7 @@ def render_guided_description_builder(*, wrap_in_expander=False):
             if suggestions:
                 st.markdown("**Suggested additional information to include:**")
                 for suggestion in suggestions:
-                    st.markdown(f"- {suggestion}")
+                    st.markdown(sanitize_markdown(f"- {suggestion}"))
                 st.caption(
                     "Suggestions are guidance only; they are not added to your "
                     "description automatically."
@@ -444,7 +448,7 @@ def render_github_repo_input():
     )
 
     if github_url and github_url != st.session_state.get("last_analyzed_url", ""):
-        if "github_api_key" not in st.session_state or not st.session_state["github_api_key"]:
+        if not resolve_github_api_key(st.session_state):
             st.warning("Please enter a GitHub API key to analyze the repository.")
         else:
             try:
@@ -558,7 +562,7 @@ def analyze_github_repo(repo_url):
     # allowlists via STRIDE_GPT_GHE_HOST — anything else would leak credentials.
     hostname = (parsed_url.hostname or "").lower()
     ghe_host = os.getenv("STRIDE_GPT_GHE_HOST", "").strip().lower()
-    token = st.session_state.get("github_api_key", "")
+    token = resolve_github_api_key(st.session_state)
 
     if hostname == "github.com":
         g = Github(token)
@@ -873,44 +877,23 @@ def mermaid(code: str, height: int = 500) -> None:
     )
 
 
+def invalidate_dfd_confirmation():
+    """Invalidate approval before any threat-model generation on the next rerun."""
+    st.session_state.pop("confirmed_dfd", None)
+    st.session_state["dfd_confirm_checkbox"] = False
+
+
 def load_env_variables():
     # Try to load from .env file
     if Path(".env").exists():
         load_dotenv(".env")
 
-    # Load GitHub API key from environment variable
-    github_api_key = os.getenv("GITHUB_API_KEY")
-    if github_api_key:
-        st.session_state["github_api_key"] = github_api_key
-
-    # Load other API keys if needed
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    if openai_api_key:
-        st.session_state["openai_api_key"] = openai_api_key
-
-    anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-    if anthropic_api_key:
-        st.session_state["anthropic_api_key"] = anthropic_api_key
-
-    google_api_key = os.getenv("GOOGLE_API_KEY")
-    if google_api_key:
-        st.session_state["google_api_key"] = google_api_key
-
-    mistral_api_key = os.getenv("MISTRAL_API_KEY")
-    if mistral_api_key:
-        st.session_state["mistral_api_key"] = mistral_api_key
-
-    groq_api_key = os.getenv("GROQ_API_KEY")
-    if groq_api_key:
-        st.session_state["groq_api_key"] = groq_api_key
-
-    deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
-    if deepseek_api_key:
-        st.session_state["deepseek_api_key"] = deepseek_api_key
-
-    # Add LM Studio Server endpoint configuration
-    lm_studio_endpoint = os.getenv("LM_STUDIO_ENDPOINT", "http://localhost:1234")
-    st.session_state["lm_studio_endpoint"] = lm_studio_endpoint
+    # Operator credentials stay in os.environ. Copying them into password-field
+    # defaults serializes them to every visiting browser, even when masked.
+    if "lm_studio_endpoint" not in st.session_state:
+        st.session_state["lm_studio_endpoint"] = os.getenv(
+            "LM_STUDIO_ENDPOINT", "http://localhost:1234"
+        )
 
 
 # Call this function at the start of your app
@@ -1038,14 +1021,16 @@ with st.sidebar:
         # API key input
         _session_key = PROVIDER_API_KEY_STATE.get(model_provider, "")
         if _session_key:
+            if has_server_api_key(model_provider):
+                st.caption("A server credential is configured. Leave the field empty to use it.")
             _api_key_val = st.text_input(
                 f"Enter your {_current_provider.name} API key:",
                 value=st.session_state.get(_session_key, ""),
+                key=f"credential_{_session_key}",
                 type="password",
                 help=f"You can find your API key at [{_current_provider.name}]({_current_provider.api_key_url}).",
             )
-            if _api_key_val:
-                st.session_state[_session_key] = _api_key_val
+            st.session_state[_session_key] = _api_key_val
 
         # Model selectbox from registry
         _model_list = get_models_for_provider(model_provider)
@@ -1079,16 +1064,18 @@ with st.sidebar:
             st.session_state["use_thinking"] = False
 
     # Add GitHub API key input field to the sidebar
+    if os.getenv("GITHUB_API_KEY"):
+        st.caption("A server GitHub credential is configured. Leave the field empty to use it.")
     github_api_key = st.text_input(
         "Enter your GitHub API key (optional):",
         value=st.session_state.get("github_api_key", ""),
+        key="credential_github_api_key",
         type="password",
         help="You can find or create your GitHub API key in your GitHub account settings under Developer settings > Personal access tokens.",
     )
 
     # Store the GitHub API key in session state
-    if github_api_key:
-        st.session_state["github_api_key"] = github_api_key
+    st.session_state["github_api_key"] = github_api_key
 
     # Add Advanced Settings section with token limit configuration
     with st.expander("Advanced Settings"):
@@ -1219,19 +1206,14 @@ with st.sidebar:
 
 # ------------------ Provider API keys (module scope) ------------------ #
 #
-# `load_env_variables()` reads .env into FUNCTION-LOCAL variables, and the
-# sidebar's password fields only write to st.session_state — neither path
-# defines `openai_api_key` / `anthropic_api_key` / etc. at module scope.
-# Hoist them here, after the sidebar has run, so the bare names referenced
-# throughout the tab bodies (image analysis, threat model, attack tree,
-# mitigations, DREAD, test cases) resolve to the live values. Streamlit's
-# hot-reload was masking this by leaking stale locals across reruns.
-openai_api_key = st.session_state.get("openai_api_key", "")
-anthropic_api_key = st.session_state.get("anthropic_api_key", "")
-google_api_key = st.session_state.get("google_api_key", "")
-mistral_api_key = st.session_state.get("mistral_api_key", "")
-groq_api_key = st.session_state.get("groq_api_key", "")
-deepseek_api_key = st.session_state.get("deepseek_api_key", "")
+# Resolve keys only for server-side provider calls. Password widgets contain
+# user overrides, never environment-backed operator credentials.
+openai_api_key = resolve_provider_api_key("OpenAI API", st.session_state)
+anthropic_api_key = resolve_provider_api_key("Anthropic API", st.session_state)
+google_api_key = resolve_provider_api_key("Google AI API", st.session_state)
+mistral_api_key = resolve_provider_api_key("Mistral API", st.session_state)
+groq_api_key = resolve_provider_api_key("Groq API", st.session_state)
+deepseek_api_key = resolve_provider_api_key("DeepSeek API", st.session_state)
 
 
 # ------------------ Main App UI ------------------ #
@@ -1618,8 +1600,8 @@ understanding possible vulnerabilities and attack vectors. Use this tab to gener
                     st.session_state["improvement_suggestions"] = improvement_suggestions
 
                     # Convert to Markdown and store in session state for persistent display
-                    st.session_state["threat_model_markdown"] = json_to_markdown(
-                        threat_model, improvement_suggestions
+                    st.session_state["threat_model_markdown"] = sanitize_markdown(
+                        json_to_markdown(threat_model, improvement_suggestions)
                     )
                     break  # Exit the loop if successful
                 except Exception as e:
@@ -1652,10 +1634,10 @@ with tab1:
         ):
             thinking_model = "Claude" if model_provider == "Anthropic API" else "Gemini"
             with st.expander(f"View {thinking_model}'s thinking process"):
-                st.markdown(st.session_state["last_thinking_content"])
+                st.markdown(sanitize_markdown(st.session_state["last_thinking_content"]))
 
         # Display the threat model in Markdown
-        st.markdown(st.session_state["threat_model_markdown"])
+        st.markdown(sanitize_markdown(st.session_state["threat_model_markdown"]))
 
         # Add a button to allow the user to download the output as a Markdown file
         st.download_button(
@@ -1763,7 +1745,7 @@ vulnerabilities and prioritising mitigation efforts.
                     ):
                         thinking_model = "Claude" if model_provider == "Anthropic API" else "Gemini"
                         with st.expander(f"View {thinking_model}'s thinking process"):
-                            st.markdown(st.session_state["last_thinking_content"])
+                            st.markdown(sanitize_markdown(st.session_state["last_thinking_content"]))
 
                     # Display the generated attack tree code
                     st.write("Attack Tree Code:")
@@ -1865,14 +1847,7 @@ Three ways to use this tab:
 
     # --- Section 2: Handle Generation --- #
 
-    # API keys live in st.session_state once the sidebar has run (loaded from
-    # .env in load_env_variables and/or typed into the password field). The
-    # bare names openai_api_key / anthropic_api_key etc. are only ever local
-    # to load_env_variables, so always go through session_state here.
-    _dfd_api_key = st.session_state.get(
-        PROVIDER_API_KEY_STATE.get(model_provider, ""),
-        "",
-    )
+    _dfd_api_key = resolve_provider_api_key(model_provider, st.session_state)
 
     if dfd_generate_button and st.session_state.get("app_input"):
         dfd_prompt = create_dfd_prompt(
@@ -1914,6 +1889,8 @@ Three ways to use this tab:
                     # Generation invalidates any previous confirmation — the user
                     # needs to re-tick "Use this DFD" to opt back in.
                     st.session_state["dfd_mermaid"] = dfd_mermaid
+                    st.session_state["dfd_editor"] = dfd_mermaid
+                    st.session_state["dfd_confirm_checkbox"] = False
                     st.session_state.pop("confirmed_dfd", None)
                 except Exception as e:
                     st.error(f"Error generating DFD: {e}")
@@ -1923,9 +1900,10 @@ Three ways to use this tab:
     # --- Section 3: Handle Image Parsing --- #
 
     if uploaded_dfd_image is not None:
-        # Re-parse on every change of the upload — the file_uploader returns
-        # the same object across reruns, so we key on the file name + size.
-        upload_key = f"{uploaded_dfd_image.name}:{uploaded_dfd_image.size}"
+        # Content identity detects a replacement even when name and size match.
+        # getvalue() also avoids consuming the upload stream on failed retries.
+        image_bytes = uploaded_dfd_image.getvalue()
+        upload_key = hashlib.sha256(image_bytes).hexdigest()
         if st.session_state.get("dfd_last_upload_key") != upload_key:
             if not _dfd_api_key:
                 st.error(
@@ -1935,7 +1913,6 @@ Three ways to use this tab:
             else:
                 with st.spinner("Parsing DFD image..."):
                     try:
-                        image_bytes = uploaded_dfd_image.read()
                         base64_image = base64.b64encode(image_bytes).decode("utf-8")
                         media_type = (
                             "image/png" if uploaded_dfd_image.type == "image/png" else "image/jpeg"
@@ -1955,6 +1932,8 @@ Three ways to use this tab:
                         else:
                             dfd_mermaid = ""
                         st.session_state["dfd_mermaid"] = dfd_mermaid
+                        st.session_state["dfd_editor"] = dfd_mermaid
+                        st.session_state["dfd_confirm_checkbox"] = False
                         st.session_state["dfd_last_upload_key"] = upload_key
                         st.session_state.pop("confirmed_dfd", None)
                     except Exception as e:
@@ -1964,14 +1943,23 @@ Three ways to use this tab:
 
     st.markdown("---")
     st.markdown("**Mermaid source** (edit freely — the preview updates on rerun):")
+    if "dfd_editor" not in st.session_state:
+        st.session_state["dfd_editor"] = st.session_state.get("dfd_mermaid", "")
     dfd_editor_value = st.text_area(
         "DFD Mermaid code",
-        value=st.session_state.get("dfd_mermaid", ""),
         height=260,
         key="dfd_editor",
+        on_change=invalidate_dfd_confirmation,
         label_visibility="collapsed",
         placeholder="No DFD yet. Use 'Generate DFD' or upload an image to populate this editor.",
     )
+    # Confirmation applies to one reviewed diagram. An edit (including clearing
+    # it) must not silently replace that approval or leave an old diagram active.
+    if (
+        dfd_editor_value != st.session_state.get("dfd_mermaid", "")
+        or not dfd_editor_value.strip()
+    ):
+        invalidate_dfd_confirmation()
     # Keep dfd_mermaid in sync with the editor so it survives reruns.
     st.session_state["dfd_mermaid"] = dfd_editor_value
 
@@ -1986,7 +1974,6 @@ Three ways to use this tab:
 
         confirmed = st.checkbox(
             "Use this DFD for the threat model",
-            value=bool(st.session_state.get("confirmed_dfd")),
             help=(
                 "When ticked, this DFD is included in the Threat Model and Attack Tree "
                 "prompts so the analysis aligns with the diagram."
@@ -2109,9 +2096,10 @@ the security posture of the application and protect against potential attacks.
                                 "Claude" if model_provider == "Anthropic API" else "Gemini"
                             )
                             with st.expander(f"View {thinking_model}'s thinking process"):
-                                st.markdown(st.session_state["last_thinking_content"])
+                                st.markdown(sanitize_markdown(st.session_state["last_thinking_content"]))
 
                         # Display the suggested mitigations in Markdown
+                        mitigations_markdown = sanitize_markdown(mitigations_markdown)
                         st.markdown(mitigations_markdown)
 
                         st.markdown("")
@@ -2228,7 +2216,7 @@ focusing on the most critical threats first. Use this tab to perform a DREAD ris
                                 f"Error generating DREAD risk assessment. Retrying attempt {retry_count + 1}/{max_retries}..."
                             )
             # Convert the DREAD assessment JSON to Markdown
-            dread_assessment_markdown = dread_json_to_markdown(dread_assessment)
+            dread_assessment_markdown = sanitize_markdown(dread_json_to_markdown(dread_assessment))
 
             # Add debug information about the assessment
             if not dread_assessment.get("Risk Assessment"):
@@ -2247,7 +2235,7 @@ focusing on the most critical threats first. Use this tab to perform a DREAD ris
             ):
                 thinking_model = "Claude" if model_provider == "Anthropic API" else "Gemini"
                 with st.expander(f"View {thinking_model}'s thinking process"):
-                    st.markdown(st.session_state["last_thinking_content"])
+                    st.markdown(sanitize_markdown(st.session_state["last_thinking_content"]))
 
             # Display the DREAD assessment with a header
             st.markdown("## DREAD Risk Assessment")
@@ -2256,7 +2244,7 @@ focusing on the most critical threats first. Use this tab to perform a DREAD ris
             )
 
             # Display the DREAD assessment in Markdown format
-            st.markdown(dread_assessment_markdown, unsafe_allow_html=False)
+            st.markdown(sanitize_markdown(dread_assessment_markdown), unsafe_allow_html=False)
 
             # Add a button to allow the user to download the DREAD assessment as a Markdown file
             st.download_button(
@@ -2362,9 +2350,10 @@ scenarios.
                                 "Claude" if model_provider == "Anthropic API" else "Gemini"
                             )
                             with st.expander(f"View {thinking_model}'s thinking process"):
-                                st.markdown(st.session_state["last_thinking_content"])
+                                st.markdown(sanitize_markdown(st.session_state["last_thinking_content"]))
 
                         # Display the suggested mitigations in Markdown
+                        test_cases_markdown = sanitize_markdown(test_cases_markdown)
                         st.markdown(test_cases_markdown)
 
                         st.markdown("")
@@ -2419,10 +2408,10 @@ assessment.
             "Model tab and generate the threat model again."
         )
     else:
-        compliance_markdown = "\n".join(compliance_section_lines(compliance_threats))
+        compliance_markdown = sanitize_markdown("\n".join(compliance_section_lines(compliance_threats)))
         # Every value rendered here is a validated control ID or text from the
         # packaged catalogue — no model-written prose reaches this markdown.
-        st.markdown(compliance_markdown)
+        st.markdown(sanitize_markdown(compliance_markdown))
 
         csv_buffer = io.StringIO()
         writer = csv.DictWriter(csv_buffer, fieldnames=COMPLIANCE_ROW_FIELDS)

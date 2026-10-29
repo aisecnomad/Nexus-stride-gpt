@@ -6,6 +6,8 @@ import json
 import re
 
 from stride_gpt.core.llm import call_llm, call_llm_with_image
+from stride_gpt.core.markdown_safety import sanitize_markdown
+from stride_gpt.core.mitre import normalize_threat_mitre
 from stride_gpt.core.prompts import create_image_analysis_prompt, create_reasoning_system_prompt
 from stride_gpt.core.schemas import LLMConfig, LLMResponse, ThreatModelOutput
 from stride_gpt.models import model_uses_completion_tokens
@@ -102,7 +104,7 @@ def json_to_markdown(threat_model, improvement_suggestions):
     lines.extend(f"- {suggestion}" for suggestion in improvement_suggestions)
     lines.append("")
 
-    return "\n".join(lines)
+    return sanitize_markdown("\n".join(lines))
 
 
 def _get_system_prompt(config: LLMConfig) -> str:
@@ -131,7 +133,7 @@ def _parse_threat_model_response(content: str) -> ThreatModelOutput:
     try:
         data = json.loads(cleaned)
         return ThreatModelOutput(
-            threat_model=data.get("threat_model", []),
+            threat_model=[normalize_threat_mitre(threat) for threat in data.get("threat_model", [])],
             improvement_suggestions=data.get("improvement_suggestions", []),
         )
     except json.JSONDecodeError as e:

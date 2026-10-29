@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mrwadams/stride-gpt/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/mrwadams/stride-gpt/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/aisecnomad/Nexus-stride-gpt/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aisecnomad/Nexus-stride-gpt/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://pypi.org/project/stride-gpt/"><img alt="PyPI" src="https://img.shields.io/pypi/v/stride-gpt"></a>
   <img alt="Python 3.12 | 3.13 | 3.14" src="https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue">
   <a href="LICENSE-MIT"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
@@ -45,6 +45,8 @@ Full release history: [CHANGELOG.md](CHANGELOG.md).
 - [License](#license)
 
 ## Quick start
+
+To run the Nexus enhancements and fixes in this repository, use the [source installation](#option-2-from-source). The `pip` and published Docker commands install upstream releases, which may not include these changes.
 
 ```bash
 pip install stride-gpt
@@ -109,7 +111,7 @@ flowchart LR
 
 **Outputs and integration**
 - **Markdown, JSON, SARIF and self-contained HTML**. SARIF imports into GitHub, GitLab, Azure DevOps and IDEs.
-- **MITRE ATT&CK and ATLAS IDs**, constrained to catalogued techniques so the model cannot invent one.
+- **MITRE ATT&CK and ATLAS IDs**, validated against the packaged technique catalogues, with canonical names looked up rather than trusted from model output. Unknown IDs, including sub-techniques absent from the packaged cards, are omitted; this validates the identifier, not whether the technique applies.
 - **Data flow diagrams** (Mermaid), generated or parsed from an image, which you can confirm and feed back as the authoritative system model.
 - **Web UI extras**: attack trees, mitigations, DREAD risk scoring, Gherkin test cases and an embedded [diagrams.net](https://www.diagrams.net/) editor (self-hostable via `STRIDE_GPT_DRAWIO_URL`).
 
@@ -150,8 +152,8 @@ This installs the lean `stride-gpt` command with no Streamlit footprint. To run 
 1. Clone the repo:
 
     ```bash
-    git clone https://github.com/mrwadams/stride-gpt.git
-    cd stride-gpt
+    git clone https://github.com/aisecnomad/Nexus-stride-gpt.git
+    cd Nexus-stride-gpt
     ```
 
 2. Install with [uv](https://docs.astral.sh/uv/) (recommended; `uv.lock` is the single source of truth for dependencies):
@@ -296,6 +298,10 @@ stride-gpt --version    # prints e.g. "stride-gpt 0.19.0" and exits
 | `--max-tool-calls` | Cap code exploration (`analyze` only; `0` = unlimited). Reporting a threat doesn't spend it, so a subsystem that finds more threats doesn't leave less exploration for the next one. |
 
 Each tier also accepts `--worker-api-key` / `--worker-api-base` / `--worker-max-tokens` (and the `--architect-*` equivalents). Run `stride-gpt analyze --help` or `stride-gpt quick --help` for the complete list.
+
+**Resume compatibility:** `--resume <checkpoint>` requires the same analysis directory, Git commit/tree, and model configuration. `--force` can acknowledge dirty or unverifiable non-Git content, but cannot override a different directory, commit/tree, or configuration. Checkpoints created before target identity was recorded remain readable, but require a fresh analysis rather than resume.
+
+**Safe exports:** Reports, checkpoints, and sibling exports use exclusive temporary files and atomic replacement, with private file permissions where supported. Destination and parent symlinks are rejected. Use a private export directory, especially on platforms without descriptor-relative filesystem operations, where a concurrent hostile parent-directory replacement cannot be excluded.
 
 **Structured intermediates** — when `-o <path>` is used, three JSON siblings are written alongside the report so the run can be audited or consumed by downstream tools:
 
@@ -478,11 +484,12 @@ _AIUC-1, ISO/IEC 42001 and EU AI Act references are omitted because no threat in
 
 ## Security and privacy
 
-STRIDE GPT is designed for local, single-user use; the web UI stores nothing server-side, and the CLI saves reports only under `~/.stride-gpt/reports/`. Keep these in mind:
+STRIDE GPT is designed for local, single-user use. The web UI holds data in server-side session memory; the CLI auto-saves reports under `~/.stride-gpt/reports/` and writes requested exports and checkpoints beside `-o` outputs. Keep these in mind:
 
 - **Your descriptions and code go to the LLM provider you choose.** Providers may log requests under their own policies. For sensitive systems, use a local model (LM Studio), a provider with suitable data-handling terms, or a sanitised description.
 - **The agent reads the codebase you point it at.** Its file tools are sandboxed to the target directory and refuse version-control metadata (`.git`, `.hg`, `.svn`), where CI tokens can live, so run it on the code you intend to send to the model.
 - **API keys are credentials.** Keep them in environment variables, `~/.stride-gpt/.env` or a secrets manager, never in version control, and set spending limits with your provider.
+- **Operator credentials stay server-side.** The web UI does not prefill server-provided keys into password fields. A user can supply a session-specific key instead. Compose publishes the UI on `127.0.0.1:8501` by default.
 - **Threat models are sensitive.** A report is a map of your weaknesses: store and share it like one.
 - **Team deployments need hardening.** The web UI has no built-in authentication. Before anyone else can reach it, follow [Deployment hardening](docs/deployment-hardening.md): an OIDC identity-aware proxy, TLS 1.3 (and mTLS behind the proxy), egress allow-listing to your model provider, and centralised logging.
 

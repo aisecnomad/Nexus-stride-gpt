@@ -170,13 +170,14 @@ class TestCheckpointPathFor:
 # ---------------------------------------------------------------------------
 
 
-def _checkpoint(*, target_git_sha: str | None, config_hash: str, sample_plan) -> Checkpoint:
+def _checkpoint(*, target_git_sha: str | None, config_hash: str, sample_plan, target) -> Checkpoint:
     return Checkpoint(
         stride_gpt_version="0.0.0-test",
         started_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
         target_path="./",
         target_git_sha=target_git_sha,
+        target_identity=persistence.checkpoint_target_identity(target),
         config_hash=config_hash,
         app_type_source="planner",
         plan=sample_plan,
@@ -194,6 +195,7 @@ class TestValidateCheckpointForResume:
             target_git_sha="sha1",
             config_hash=compute_checkpoint_config_hash(model_pair),
             sample_plan=sample_plan,
+            target=tmp_path,
         )
         # No exception raised.
         validate_checkpoint_for_resume(checkpoint, target=tmp_path, models=model_pair, force=False)
@@ -205,6 +207,7 @@ class TestValidateCheckpointForResume:
             target_git_sha="sha-old",
             config_hash=compute_checkpoint_config_hash(model_pair),
             sample_plan=sample_plan,
+            target=tmp_path,
         )
         for force in (False, True):
             with pytest.raises(CheckpointValidationError, match="target_git_sha changed"):
@@ -220,6 +223,7 @@ class TestValidateCheckpointForResume:
             target_git_sha="sha1",
             config_hash=compute_checkpoint_config_hash(different_model_pair),
             sample_plan=sample_plan,
+            target=tmp_path,
         )
         for force in (False, True):
             with pytest.raises(CheckpointValidationError, match="config_hash changed"):
@@ -232,6 +236,7 @@ class TestValidateCheckpointForResume:
             target_git_sha=None,
             config_hash=compute_checkpoint_config_hash(model_pair),
             sample_plan=sample_plan,
+            target=tmp_path,
         )
         with pytest.raises(CheckpointValidationError, match="no discoverable git SHA"):
             validate_checkpoint_for_resume(checkpoint, target=tmp_path, models=model_pair, force=False)
@@ -243,6 +248,7 @@ class TestValidateCheckpointForResume:
             target_git_sha=None,
             config_hash=compute_checkpoint_config_hash(model_pair),
             sample_plan=sample_plan,
+            target=tmp_path,
         )
         validate_checkpoint_for_resume(checkpoint, target=tmp_path, models=model_pair, force=True)
 
@@ -253,6 +259,7 @@ class TestValidateCheckpointForResume:
             target_git_sha="sha1",
             config_hash=compute_checkpoint_config_hash(model_pair),
             sample_plan=sample_plan,
+            target=tmp_path,
         )
         with pytest.raises(CheckpointValidationError, match="uncommitted changes"):
             validate_checkpoint_for_resume(checkpoint, target=tmp_path, models=model_pair, force=False)
@@ -264,6 +271,7 @@ class TestValidateCheckpointForResume:
             target_git_sha="sha1",
             config_hash=compute_checkpoint_config_hash(model_pair),
             sample_plan=sample_plan,
+            target=tmp_path,
         )
         validate_checkpoint_for_resume(checkpoint, target=tmp_path, models=model_pair, force=True)
 
@@ -429,3 +437,93 @@ class TestIsGitDirtyIgnoresTheCheckpoint:
     def test_a_checkpoint_outside_the_repo_changes_nothing(self, tmp_path, monkeypatch):
         self._stub_git(monkeypatch, tmp_path, " M src/auth.py\n")
         assert is_git_dirty(tmp_path, ignore=tmp_path.parent / "elsewhere.checkpoint.json") is True
+
+
+def test_predictable_old_temp_symlink_cannot_overwrite_outside_file(
+    tmp_path, sample_plan, model_pair
+):
+    outside = tmp_path / "outside"
+    outside.write_text("original")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    path = repo / "report.checkpoint.json"
+    trap = repo / "report.checkpoint.json.tmp"
+    trap.symlink_to(outside)
+    checkpoint = build_checkpoint(
+        plan=sample_plan, findings=[], target=repo, models=model_pair,
+        app_type_source="planner", started_at=datetime.now(UTC),
+    )
+    write_checkpoint(path, checkpoint)
+    assert outside.read_text() == "original"
+    assert trap.is_symlink()
+    assert not path.is_symlink()
+    assert load_checkpoint(path) == checkpoint
+
+
+def test_legacy_checkpoint_cannot_resume_even_with_force(
+    tmp_path, monkeypatch, sample_plan, model_pair
+):
+    checkpoint = build_checkpoint(
+        plan=sample_plan, findings=[], target=tmp_path, models=model_pair,
+        app_type_source="planner", started_at=datetime.now(UTC),
+    )
+    legacy = checkpoint.model_dump()
+    legacy.pop("target_identity")
+    loaded = Checkpoint(**legacy)
+    for force in (False, True):
+        with pytest.raises(CheckpointValidationError, match="legacy checkpoint"):
+            validate_checkpoint_for_resume(loaded, target=tmp_path, models=model_pair, force=force)
+
+
+def test_non_git_checkpoint_cannot_change_target_even_with_force(
+    tmp_path, sample_plan, model_pair
+):
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    checkpoint = build_checkpoint(
+        plan=sample_plan, findings=[], target=first, models=model_pair,
+        app_type_source="planner", started_at=datetime.now(UTC),
+    )
+    with pytest.raises(CheckpointValidationError, match="analysis root"):
+        validate_checkpoint_for_resume(checkpoint, target=second, models=model_pair, force=True)
+
+
+def test_same_commit_and_identical_subtrees_do_not_allow_cross_directory_resume(
+    tmp_path, sample_plan, model_pair
+):
+    import shutil
+    import subprocess
+
+    if shutil.which("git") is None:
+        pytest.skip("git is unavailable")
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    for name in ("service-a", "service-b"):
+        (repo / name).mkdir()
+        (repo / name / "app.py").write_text("print('identical tree')\n")
+
+    def git(*args):
+        return subprocess.run(
+            ["git", "-C", str(repo), "-c", "core.hooksPath=/dev/null", *args],
+            check=True, capture_output=True, text=True,
+        ).stdout.strip()
+
+    git("init")
+    git("add", ".")
+    git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "fixture")
+    first = repo / "service-a"
+    second = repo / "service-b"
+    checkpoint = build_checkpoint(
+        plan=sample_plan, findings=[], target=first, models=model_pair,
+        app_type_source="planner", started_at=datetime.now(UTC),
+    )
+    assert checkpoint.target_identity.kind == "git"
+    assert checkpoint.target_identity.root == "service-a"
+    assert checkpoint.target_identity.tree_sha == persistence.checkpoint_target_identity(second).tree_sha
+    assert persistence.discover_git_sha(first) == persistence.discover_git_sha(second)
+    validate_checkpoint_for_resume(checkpoint, target=first, models=model_pair, force=False)
+    for force in (False, True):
+        with pytest.raises(CheckpointValidationError, match="analysis root"):
+            validate_checkpoint_for_resume(checkpoint, target=second, models=model_pair, force=force)

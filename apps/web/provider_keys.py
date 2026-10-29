@@ -1,7 +1,8 @@
-"""Provider → Streamlit session-state API-key mapping.
+"""Resolve server credentials without exposing them in Streamlit widgets.
 
-Single source of truth for "which session-state key holds this provider's API
-key". Shared by the sidebar, the Data Flow Diagram tab, and the guided-draft
+Session state holds only credentials entered by the current user. Operator
+credentials remain in the server environment and are resolved only when making
+a request. Shared by the sidebar, the Data Flow Diagram tab, and the guided-draft
 resolver in ``main.py``, and cross-checked against the provider registry by
 ``tests/test_provider_keys.py`` so a newly added provider can't silently miss a
 mapping.
@@ -12,7 +13,12 @@ LM Studio is intentionally absent: it authenticates via a custom endpoint
 
 from __future__ import annotations
 
-# provider_key (LLMConfig.provider) -> st.session_state key holding the API key.
+import os
+from collections.abc import Mapping
+
+from stride_gpt.models import PROVIDERS
+
+# provider_key (LLMConfig.provider) -> user-supplied credential in session state.
 PROVIDER_API_KEY_STATE: dict[str, str] = {
     "OpenAI API": "openai_api_key",
     "Anthropic API": "anthropic_api_key",
@@ -22,3 +28,27 @@ PROVIDER_API_KEY_STATE: dict[str, str] = {
     "DeepSeek API": "deepseek_api_key",
     "OpenRouter API": "openrouter_api_key",
 }
+
+_PROVIDER_ENV = {
+    info.provider_key: info.env_var for info in PROVIDERS.values() if info.env_var
+}
+
+
+def has_server_api_key(provider: str) -> bool:
+    """Safe UI indicator; never return a server credential to a widget."""
+    env_var = _PROVIDER_ENV.get(provider)
+    return bool(env_var and os.environ.get(env_var))
+
+
+def resolve_provider_api_key(provider: str, user_state: Mapping[str, str]) -> str:
+    """Prefer a user override, otherwise use the operator's server credential."""
+    state_key = PROVIDER_API_KEY_STATE.get(provider)
+    if state_key and user_state.get(state_key):
+        return user_state[state_key]
+    env_var = _PROVIDER_ENV.get(provider)
+    return os.environ.get(env_var, "") if env_var else ""
+
+
+def resolve_github_api_key(user_state: Mapping[str, str]) -> str:
+    """Resolve the GitHub token server-side, without populating a password field."""
+    return user_state.get("github_api_key", "") or os.environ.get("GITHUB_API_KEY", "")

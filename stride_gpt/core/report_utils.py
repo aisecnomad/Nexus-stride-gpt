@@ -14,6 +14,8 @@ from collections.abc import Iterable
 from typing import Any, NamedTuple
 
 from stride_gpt.core.controls import compliance_summary, load_catalog, normalize_control_ids
+from stride_gpt.core.markdown_safety import escape_markdown_text
+from stride_gpt.core.mitre import normalize_techniques, technique_catalog
 
 
 class ExtraColumns(NamedTuple):
@@ -137,12 +139,11 @@ def threat_table_header(
 def _escape_md_cell(value: Any) -> str:
     """Make an LLM-supplied value safe to drop into a markdown table cell.
 
-    Escapes ``|`` so it doesn't open a new column, and collapses newlines so a
-    malicious value can't break out of the row and inject arbitrary markdown
-    below the table.
+    Escapes Markdown syntax, including links, images and raw HTML, and
+    collapses newlines. Model text remains literal inside the table cell.
     """
     text = "" if value is None else str(value)
-    return text.replace("|", "\\|").replace("\r", " ").replace("\n", " ")
+    return escape_markdown_text(text.replace("\r", " ").replace("\n", " "))
 
 
 def threat_table_row(
@@ -366,63 +367,22 @@ def evidence_location(item: dict[str, Any]) -> str:
 
 
 def is_mitre_technique_id(value: str) -> bool:
-    """Return ``True`` if ``value`` looks like a MITRE technique ID.
+    """Whether an exact ID belongs to the packaged MITRE technique catalogues.
 
-    Recognizes the same shapes :func:`mitre_url` links: enterprise ATT&CK
-    ``T####`` (with an optional ``.###`` sub-technique suffix) and ATLAS
-    ``AML.*``. Used to tell real technique IDs apart from prose when a model
-    emits ``MITRE_ATTACK`` as a bare or comma-separated string, so junk like
-    ``"see the notes"`` is dropped rather than rendered as a technique.
+    The shipped cards list parent techniques only. Unlisted sub-techniques
+    are rejected rather than being guessed from a recognized parent prefix.
     """
-    tid = value.strip()
-    if tid.startswith("AML.") and len(tid) > len("AML."):
-        return True
-    return tid.startswith("T") and len(tid) > 1 and tid[1].isdigit()
+    return value.strip() in technique_catalog()
 
 
 def normalize_mitre_techniques(value: Any) -> list[tuple[str, str]]:
-    """Normalize a ``MITRE_ATTACK`` field into ``(id, name)`` pairs.
+    """Keep catalogue members and canonical names across every input shape.
 
-    Accepts every shape models emit for this field:
-
-    - the canonical list-of-objects (``[{"id": "T1190", "name": "..."}]``),
-    - the list-of-strings fallback (``["T1190", "T1078"]``), and
-    - the comma-separated-string shape that smaller/cheaper worker models
-      often emit instead (``"T1190, T1059, AML.T0053"``).
-
-    Names are only carried by the list-of-objects shape; the other shapes
-    yield an empty name. String values (whether the whole field or a single
-    list entry) are split on commas so the string shape is recovered rather
-    than dropped. Tokens parsed out of a string are kept only when they look
-    like MITRE IDs (see :func:`is_mitre_technique_id`), so a prose value never
-    turns into a fake technique; ``id``s from the structured object shape are
-    trusted as-is. Empty / missing / unrecognized input yields ``[]``.
-
-    This is the single source of truth for interpreting ``MITRE_ATTACK`` so
-    the markdown, HTML, and SARIF renderers can never disagree on which
-    shapes count as populated.
+    Model-supplied names are never authoritative. Unknown identifiers are
+    dropped, duplicates are removed, and valid IDs retain their input order.
+    All Markdown, HTML and SARIF consumers use this same validation boundary.
     """
-    if not value:
-        return []
-    if isinstance(value, str):
-        entries: list[Any] = [value]
-    elif isinstance(value, list):
-        entries = value
-    else:
-        return []
-    techniques: list[tuple[str, str]] = []
-    for entry in entries:
-        if isinstance(entry, dict):
-            tid = str(entry.get("id") or "").strip()
-            name = str(entry.get("name") or "").strip()
-            if tid:
-                techniques.append((tid, name))
-        elif isinstance(entry, str):
-            for part in entry.split(","):
-                tid = part.strip()
-                if tid and is_mitre_technique_id(tid):
-                    techniques.append((tid, ""))
-    return techniques
+    return normalize_techniques(value)
 
 
 def format_mitre_cell(value: Any) -> str:
@@ -447,7 +407,7 @@ def mitre_url(technique_id: str) -> str:
     Enterprise technique IDs follow ``T####`` (with optional ``.###`` sub-
     technique suffix) and resolve to ``attack.mitre.org``. ATLAS IDs carry the
     ``AML.`` prefix and resolve to ``atlas.mitre.org``. Returns an empty
-    string for IDs that don't match either pattern — the renderer falls back
+    string for IDs absent from the packaged catalogues — the renderer falls back
     to plain text in that case rather than producing a broken link.
     """
     tid = technique_id.strip()
