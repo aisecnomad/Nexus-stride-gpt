@@ -4,7 +4,6 @@
 
 <p align="center">
   <a href="https://github.com/aisecnomad/Nexus-stride-gpt/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aisecnomad/Nexus-stride-gpt/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://pypi.org/project/stride-gpt/"><img alt="PyPI" src="https://img.shields.io/pypi/v/stride-gpt"></a>
   <img alt="Python 3.12 | 3.13 | 3.14" src="https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue">
   <a href="LICENSE-MIT"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
@@ -15,7 +14,7 @@ STRIDE GPT is an AI-powered threat modelling tool. Point it at a codebase or des
 
 It ships as two products on one shared library:
 
-- **CLI** (`pip install stride-gpt`): an agent that plans an analysis, explores a real codebase with sandboxed file tools, and reports per-subsystem threats with evidence-check results. It also does single-shot threat models from a written description.
+- **CLI**: an agent that plans an analysis, explores a real codebase with sandboxed file tools, and reports per-subsystem threats with evidence-check results. It also does single-shot threat models from a written description.
 - **Streamlit web UI**: a hosted, single-shot threat modeller with attack trees, data flow diagrams, mitigations, DREAD scoring, Gherkin test cases and a compliance view.
 
 ## What's new
@@ -46,10 +45,12 @@ Full release history: [CHANGELOG.md](CHANGELOG.md).
 
 ## Quick start
 
-To run the Nexus enhancements and fixes in this repository, use the [source installation](#option-2-from-source). The `pip` and published Docker commands install upstream releases, which may not include these changes.
+To run the Nexus enhancements and fixes, install this repository from source. The upstream PyPI package and Docker image do not contain these changes.
 
 ```bash
-pip install stride-gpt
+git clone https://github.com/aisecnomad/Nexus-stride-gpt.git
+cd Nexus-stride-gpt
+pip install -e .
 export ANTHROPIC_API_KEY=your-key   # or OPENAI_API_KEY, GOOGLE_API_KEY, ... (or put it in ~/.stride-gpt/.env)
 stride-gpt                          # first run: the setup wizard picks a provider and model; /quit when done
 ```
@@ -112,7 +113,7 @@ flowchart LR
 **Outputs and integration**
 - **Markdown, JSON, SARIF and self-contained HTML**. SARIF imports into GitHub, GitLab, Azure DevOps and IDEs.
 - **MITRE ATT&CK and ATLAS IDs**, validated against the packaged technique catalogues, with canonical names looked up rather than trusted from model output. Unknown IDs, including sub-techniques absent from the packaged cards, are omitted; this validates the identifier, not whether the technique applies.
-- **Data flow diagrams** (Mermaid), generated or parsed from an image, which you can confirm and feed back as the authoritative system model.
+- **Data flow diagrams** (Mermaid), generated or parsed from an image, which you can confirm and feed back as the authoritative system model. HTML reports display Mermaid source as text without loading remote scripts; use a trusted Mermaid renderer separately to view the diagram.
 - **Web UI extras**: attack trees, mitigations, DREAD risk scoring, Gherkin test cases and an embedded [diagrams.net](https://www.diagrams.net/) editor (self-hostable via `STRIDE_GPT_DRAWIO_URL`).
 
 **Models**
@@ -139,7 +140,9 @@ AI frameworks appear in a report only when it concerns an AI system. The mapping
 
 ## Installation
 
-### Option 1: pip (CLI only)
+### Option 1: upstream pip release (CLI only)
+
+This installs the upstream release, not the Nexus version in this repository:
 
 ```bash
 pip install stride-gpt
@@ -179,13 +182,13 @@ This installs the lean `stride-gpt` command with no Streamlit footprint. To run 
 
 ### Option 3: Docker (web UI)
 
-The Streamlit web UI ships as a Docker image:
+Build the Streamlit web UI image from this checkout:
 
 ```bash
-docker pull mrwadams/stridegpt:latest
+docker build -f Dockerfile.ui -t nexus-stride-gpt-ui .
 ```
 
-For the CLI, use `pip install stride-gpt`; there's no separate CLI image. If you need a sandboxed CLI, build your own from a minimal Python base image.
+For the Nexus CLI, install from source; there's no separate CLI image. If you need a sandboxed CLI, build your own from a minimal Python base image.
 
 ## Repository layout
 
@@ -348,10 +351,10 @@ Open the provided URL in your browser and follow the on-screen steps. With **Map
 ### Docker
 
 ```bash
-docker run -p 8501:8501 --env-file .env mrwadams/stridegpt
+docker run -p 127.0.0.1:8501:8501 --env-file .env nexus-stride-gpt-ui
 ```
 
-`docker compose up` runs the same image with a hardened profile: all Linux capabilities dropped, `no-new-privileges`, a non-root user and resource limits. Before anyone else can reach the UI, put it behind TLS and an identity-aware proxy; see [Deployment hardening](docs/deployment-hardening.md).
+`docker compose up --build` builds from this checkout and runs with a hardened profile: all Linux capabilities dropped, `no-new-privileges`, a non-root user and resource limits. Before anyone else can reach the UI, put it behind TLS and an identity-aware proxy; see [Deployment hardening](docs/deployment-hardening.md).
 
 ## Sample output
 
@@ -487,7 +490,7 @@ _AIUC-1, ISO/IEC 42001 and EU AI Act references are omitted because no threat in
 STRIDE GPT is designed for local, single-user use. The web UI holds data in server-side session memory; the CLI auto-saves reports under `~/.stride-gpt/reports/` and writes requested exports and checkpoints beside `-o` outputs. Keep these in mind:
 
 - **Your descriptions and code go to the LLM provider you choose.** Providers may log requests under their own policies. For sensitive systems, use a local model (LM Studio), a provider with suitable data-handling terms, or a sanitised description.
-- **The agent reads the codebase you point it at.** Its file tools are sandboxed to the target directory and refuse version-control metadata (`.git`, `.hg`, `.svn`), where CI tokens can live, so run it on the code you intend to send to the model.
+- **The agent reads the codebase you point it at.** File reads use descriptor-relative, no-follow opens where supported and refuse version-control metadata, common credential paths (including `.env*`, `.aws`, `.ssh`, and key files), PEM private-key content, and a few recognizable credential formats. On platforms lacking these filesystem primitives, reads fail closed. The denylist cannot identify every secret, hard links and mount points can bypass a pathname boundary, and filenames may still be exposed. Use a private, sanitized checkout and an isolated environment; inspect it before sending data to a model.
 - **API keys are credentials.** Keep them in environment variables, `~/.stride-gpt/.env` or a secrets manager, never in version control, and set spending limits with your provider.
 - **Operator credentials stay server-side.** The web UI does not prefill server-provided keys into password fields. A user can supply a session-specific key instead. Compose publishes the UI on `127.0.0.1:8501` by default.
 - **Threat models are sensitive.** A report is a map of your weaknesses: store and share it like one.
@@ -496,12 +499,13 @@ STRIDE GPT is designed for local, single-user use. The web UI holds data in serv
 
 Dependencies are pinned in `uv.lock`, updated by Dependabot, and scanned in CI with Bandit, CodeQL, pip-audit, Gitleaks and Trivy. See [SECURITY.md](SECURITY.md) for the full policy.
 
-**Reporting a vulnerability:** use GitHub's [private vulnerability reporting](https://github.com/mrwadams/stride-gpt/security/advisories/new) rather than a public issue. We acknowledge reports within 48 hours.
+**Reporting a vulnerability:** use GitHub's [private vulnerability reporting](https://github.com/aisecnomad/Nexus-stride-gpt/security/advisories/new) rather than a public issue. We acknowledge reports within 48 hours.
 
 ## Documentation
 
 | Guide | What it covers |
 |-------|----------------|
+| [Evaluation](evaluation/README.md) | Benchmark protocol, scope, and limitations |
 | [Architecture](docs/architecture.md) | Components, the three-phase agent, data flows, trust boundaries and extension points |
 | [Controls and compliance mapping](docs/controls-and-compliance.md) | How threats are tagged with controls and mapped to AIUC-1, ISO/IEC 42001, the EU AI Act and ISO/IEC 27001; limits; customising the catalogue |
 | [Control catalogue](docs/controls-catalog.md) | Every control with guidance, mappings and sources (generated) |

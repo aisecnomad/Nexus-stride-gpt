@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -641,3 +642,81 @@ class TestReportingTools:
         params = _reporting("finish")["parameters"]
         assert params["required"] == ["improvement_suggestions"]
         assert params["properties"]["improvement_suggestions"]["items"]["type"] == "string"
+
+
+class TestConfinedSensitiveReads:
+    @pytest.mark.parametrize("name", [".env", ".env.production", "id_rsa", "client.pem", ".aws/credentials"])
+    def test_sensitive_paths_cannot_be_read_searched_or_verified(self, sandbox_dir, name):
+        from stride_gpt.agent.evidence import verify_one
+
+        secret = sandbox_dir / name
+        secret.parent.mkdir(parents=True, exist_ok=True)
+        secret.write_text("confidential-sentinel")
+        with pytest.raises(ValueError, match="sensitive"):
+            read_file(sandbox_dir, name)
+        assert not verify_one(sandbox_dir, name, "confidential-sentinel").verified
+        assert "confidential-sentinel" not in grep_content(sandbox_dir, "confidential-sentinel")
+        assert name not in search_files(sandbox_dir, "*")
+
+    def test_sensitive_symlink_target_is_denied(self, sandbox_dir):
+        from stride_gpt.agent.evidence import verify_one
+
+        (sandbox_dir / ".env").write_text("confidential-sentinel")
+        (sandbox_dir / "innocent.txt").symlink_to(sandbox_dir / ".env")
+        with pytest.raises(ValueError, match="sensitive"):
+            read_file(sandbox_dir, "innocent.txt")
+        assert not verify_one(sandbox_dir, "innocent.txt", "confidential-sentinel").verified
+        assert "confidential-sentinel" not in grep_content(sandbox_dir, "confidential-sentinel")
+
+    def test_private_key_content_is_never_returned(self, sandbox_dir):
+        from stride_gpt.agent.evidence import verify_one
+
+        (sandbox_dir / "notes.txt").write_text("-----BEGIN PRIVATE KEY-----\nconfidential-sentinel\n")
+        assert "confidential-sentinel" not in read_file(sandbox_dir, "notes.txt")
+        assert "confidential-sentinel" not in grep_content(sandbox_dir, "confidential-sentinel")
+        assert not verify_one(sandbox_dir, "notes.txt", "confidential-sentinel").verified
+
+    @pytest.mark.skipif(not (os.open in os.supports_dir_fd and hasattr(os, "O_NOFOLLOW")), reason="requires descriptor-relative opens")
+    def test_swapped_parent_cannot_escape_root(self, sandbox_dir, tmp_path, monkeypatch):
+        from stride_gpt.agent import tools as agent_tools
+
+        parent = sandbox_dir / "race"
+        parent.mkdir()
+        (parent / "source.py").write_text("safe")
+        outside = tmp_path / "outside"
+        outside.mkdir()
+        (outside / "source.py").write_text("confidential-sentinel")
+        real_open = os.open
+        swapped = False
+
+        def open_with_swap(path, flags, *args, **kwargs):
+            nonlocal swapped
+            if path == "race" and kwargs.get("dir_fd") is not None and not swapped:
+                swapped = True
+                parent.rename(sandbox_dir / "moved")
+                parent.symlink_to(outside, target_is_directory=True)
+            return real_open(path, flags, *args, **kwargs)
+
+        monkeypatch.setattr(agent_tools.os, "open", open_with_swap)
+        # Preserve the capability check when the test replaces os.open.
+        monkeypatch.setattr(agent_tools.os, "supports_dir_fd", {*os.supports_dir_fd, open_with_swap})
+        assert "confidential-sentinel" not in read_file(sandbox_dir, "race/source.py")
+        assert swapped
+
+
+def test_grep_reports_credential_exclusions(sandbox_dir):
+    (sandbox_dir / ".env").write_text("confidential-sentinel")
+    (sandbox_dir / ".aws").mkdir()
+    (sandbox_dir / ".aws" / "credentials").write_text("confidential-sentinel")
+    result = json.loads(grep_content(sandbox_dir, "confidential-sentinel"))
+    assert result[-1]["truncated"] is True
+    assert result[-1]["reason"] == "sensitive_files_skipped"
+    assert result[-1]["sensitive_paths_skipped"] >= 2
+    assert "confidential-sentinel" not in json.dumps(result)
+
+
+def test_known_credential_markers_are_not_returned(sandbox_dir):
+    value = "AKIA" + "A" * 16
+    (sandbox_dir / "settings.py").write_text(value)
+    assert value not in read_file(sandbox_dir, "settings.py")
+    assert value not in grep_content(sandbox_dir, "AKIA")

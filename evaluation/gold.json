@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "corpus_version": "0.1.0-pilot",
+  "cases": [
+    {
+      "case_id": "case-01",
+      "target_present": true,
+      "target_assertion": "A customer can read another customer\u2019s invoice because the handler fetches by ID without an ownership check.",
+      "severity": "high",
+      "rationale": "Researcher-authored synthetic fixture; requires independent domain review before use as an authoritative reference."
+    },
+    {
+      "case_id": "case-02",
+      "target_present": false,
+      "target_assertion": "A customer can read another customer\u2019s invoice because the handler lacks an ownership check.",
+      "severity": null,
+      "rationale": "Researcher-authored synthetic fixture; requires independent domain review before use as an authoritative reference."
+    },
+    {
+      "case_id": "case-03",
+      "target_present": true,
+      "target_assertion": "A malicious ticket can steer the tool-enabled agent to send confidential account data to an attacker-controlled destination.",
+      "severity": "high",
+      "rationale": "Researcher-authored synthetic fixture; requires independent domain review before use as an authoritative reference."
+    },
+    {
+      "case_id": "case-04",
+      "target_present": false,
+      "target_assertion": "The assistant can directly use a messaging tool to exfiltrate confidential account records.",
+      "severity": null,
+      "rationale": "Researcher-authored synthetic fixture; requires independent domain review before use as an authoritative reference."
+    },
+    {
+      "case_id": "case-05",
+      "target_present": true,
+      "target_assertion": "An attacker can choose another tenant ID and retrieve its data through the shared privileged credential.",
+      "severity": "high",
+      "rationale": "Researcher-authored synthetic fixture; requires independent domain review before use as an authoritative reference."
+    },
+    {
+      "case_id": "case-06",
+      "target_present": false,
+      "target_assertion": "An attacker can select another tenant merely by changing the event tenant ID and use a shared privileged credential.",
+      "severity": null,
+      "rationale": "Researcher-authored synthetic fixture; requires independent domain review before use as an authoritative reference."
+    },
+    {
+      "case_id": "case-07",
+      "target_present": true,
+      "target_assertion": "Disabled TLS certificate validation permits network interception of requests and bearer tokens.",
+      "severity": "high",
+      "rationale": "Researcher-authored synthetic fixture; requires independent domain review before use as an authoritative reference."
+    },
+    {
+      "case_id": "case-08",
+      "target_present": true,
+      "target_assertion": "Disabled TLS certificate validation permits network interception of requests and bearer tokens.",
+      "severity": "high",
+      "rationale": "Researcher-authored synthetic fixture; requires independent domain review before use as an authoritative reference."
+    }
+  ]
+}

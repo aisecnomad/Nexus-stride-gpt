@@ -1,72 +1,20 @@
-# Releasing STRIDE-GPT
+# Release candidates
 
-Releases are automated by [`.github/workflows/release.yml`](.github/workflows/release.yml).
-Pushing a version tag (`vX.Y.Z`) runs the full pipeline: verify the tag matches
-the packaged version, run the test suite on Python 3.12/3.13/3.14, publish the
-CLI to PyPI, build and push the multi-arch UI image to Docker Hub, then cut a
-GitHub Release with generated notes.
+Nexus does not currently publish a package or container. The package metadata
+still uses the upstream distribution name `stride-gpt`; that name and the
+upstream Docker Hub image belong to their respective owners. Do not publish this
+fork to those namespaces without authorization.
 
-## One-time setup
+A version tag triggers the [release candidate workflow](.github/workflows/release.yml).
+It checks that the tag matches `pyproject.toml`, builds a wheel and source
+archive, and uploads them as workflow artifacts. It does **not** publish to
+PyPI, push an image, or create a GitHub Release. A manual run builds the same
+artifacts without requiring a tag. Normal PR checks, the clean wheel audit, and
+security checks should pass before a tag is created.
 
-These configure the credentials the workflow relies on. Do them once.
-
-### PyPI trusted publishing (no token)
-
-The workflow publishes via OIDC, so there is no API token to manage. Add a
-trusted publisher on PyPI instead:
-
-1. Go to the [`stride-gpt` project on PyPI](https://pypi.org/manage/project/stride-gpt/settings/publishing/)
-   → Publishing → Add a new trusted publisher (GitHub).
-2. Fill in:
-   - **Owner**: `mrwadams`
-   - **Repository name**: `stride-gpt`
-   - **Workflow name**: `release.yml`
-   - **Environment name**: `pypi`
-3. In the GitHub repo, create an Environment named `pypi`
-   (Settings → Environments → New environment). Optionally add a required
-   reviewer so a human approves each publish.
-
-### Docker Hub secrets
-
-The UI image publishes to the public `mrwadams/stridegpt` repository (free tier
-covers public pushes). Add two repository secrets under
-Settings → Secrets and variables → Actions:
-
-- `DOCKERHUB_USERNAME` — your Docker Hub username (`mrwadams`).
-- `DOCKERHUB_TOKEN` — a Docker Hub **access token** with Read/Write scope
-  (Account Settings → Personal access tokens → Generate).
-
-## Cutting a release
-
-1. Bump `version` in `pyproject.toml`.
-2. Move the **Unreleased** entries in `CHANGELOG.md` under a heading for the new
-   version, refresh the short *What's new* list near the top of `README.md`, and
-   update any version-pinned references (e.g. `docker pull
-   mrwadams/stridegpt:latest` examples stay correct automatically; the `latest`
-   tag is republished each release).
-3. Commit on `master` (via PR), then tag and push:
-
-   ```bash
-   git checkout master && git pull --ff-only
-   git tag v0.19.0
-   git push origin v0.19.0
-   ```
-
-   The tag must match `pyproject.toml` exactly, or the `verify` job fails before
-   anything is published.
-
-4. Watch the run under the repo's Actions tab. On success:
-   - `stride-gpt X.Y.Z` is live on PyPI (`pip install stride-gpt`).
-   - `mrwadams/stridegpt:X.Y.Z`, `:X.Y`, and `:latest` are pushed (amd64 + arm64).
-   - A GitHub Release for the tag exists with auto-generated notes.
-
-## Notes
-
-- **Concurrency** is set to never cancel an in-flight release; a partially
-  published tag is worse than waiting.
-- **arm64** builds run under QEMU emulation and are slower than amd64. This is
-  expected for the infrequent release cadence.
-- To re-run a failed release, fix the cause and re-push the tag
-  (`git tag -d vX.Y.Z && git push --delete origin vX.Y.Z`, then re-tag). PyPI
-  will reject a re-upload of an already-published version, so bump the version
-  if the PyPI step already succeeded.
+Before enabling a future release, choose and verify Nexus-controlled package and
+container names, update package metadata and installation documentation, set up
+OIDC trusted publishing and protected deployment environments, and add reviewed
+publish jobs with appropriate tests, provenance and least-privilege permissions.
+Preserve upstream attribution and licence notices. Publishing is deliberately
+unconfigured until these decisions are made.

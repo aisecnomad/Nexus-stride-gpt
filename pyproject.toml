@@ -18,7 +18,7 @@ classifiers = [
 ]
 dependencies = [
     "httpx>=0.27",
-    "litellm>=1.40",
+    "litellm>=1.103.1",
     "pydantic>=2.0",
     "python-dotenv>=1.0",
     "typer>=0.15",
@@ -30,9 +30,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/mrwadams/stride-gpt"
-Issues = "https://github.com/mrwadams/stride-gpt/issues"
-Repository = "https://github.com/mrwadams/stride-gpt"
+Homepage = "https://github.com/aisecnomad/Nexus-stride-gpt"
+Issues = "https://github.com/aisecnomad/Nexus-stride-gpt/issues"
+Repository = "https://github.com/aisecnomad/Nexus-stride-gpt"
 
 [project.scripts]
 stride-gpt = "stride_gpt.cli:main"
@@ -93,9 +93,8 @@ constraint-dependencies = [
     # litellm: authenticated SSRF and provider-credential exfiltration via
     # request-body routing params (1.91.0-1.91.4), proxy-user arbitrary local
     # file read (GHSA-g5ff-637f-6q2m, <1.95.0), then internal_user privilege
-    # escalation (CVE-2026-114612, fixed in 1.103.1 on the 1.103 line). Floor
-    # kept lock-only so the published wheel's litellm>=1.40 range is unchanged.
-    "litellm>=1.103.1",
+    # escalation (CVE-2026-114612, fixed in 1.103.1 on the 1.103 line).
+    # The LiteLLM floor is a project dependency, so it also reaches wheel users.
     # certifi via httpx/requests: bundled emSign ECC Root CA - G3 chains to
     # eMudhra intermediates with compromised keys (GHSA-6q48-6c7w-9gw2, <2026.10.18).
     # 2026.10.18 dropped all emSign roots; 2026.10.19 restored the unaffected ones.

@@ -232,3 +232,7 @@ Security updates will be released as patch versions and documented in the releas
 ## Acknowledgments
 
 We appreciate the security research community's efforts in responsibly disclosing vulnerabilities. Contributors who report valid security issues will be acknowledged (with permission) in our security advisories.
+
+### Source-analysis boundaries
+
+Agent source reads and evidence verification deny common credential paths, PEM private-key content, and a few recognizable credential formats and use descriptor-relative opens that do not follow replaced symlinks. Reads fail closed on platforms without the necessary primitives. This is not a complete secret detector: credentials can be embedded in ordinary source, and filesystem hard links or mount points are outside pathname confinement. Analyze a private, sanitized checkout in an isolated environment, and do not scan repositories that another principal can concurrently mutate. Provider requests may contain source content; use appropriate provider terms and data-handling controls.

@@ -149,6 +149,7 @@ def test_github_token_resolves_server_side_and_override_can_be_cleared(web_app, 
 
     server_key = "fake-server-github-key"
     monkeypatch.setenv("GITHUB_API_KEY", server_key)
+    monkeypatch.setenv("STRIDE_GPT_ALLOW_SHARED_GITHUB_TOKEN", "true")
     repository = Mock(default_branch="main")
     repository.get_git_tree.return_value = SimpleNamespace(tree=[])
     repository.get_contents.return_value = SimpleNamespace(
@@ -196,6 +197,15 @@ def test_lm_studio_user_key_can_be_cleared(web_app, monkeypatch):
     _run(app)
     assert app.session_state["lm_studio_api_key"] == ""
     assert make_client.call_args.kwargs["api_key"] == "not-needed"
+
+
+def test_github_server_token_cannot_be_used_without_opt_in(web_app, monkeypatch):
+    monkeypatch.setenv("GITHUB_API_KEY", "fake-server-github-key")
+    monkeypatch.delenv("STRIDE_GPT_ALLOW_SHARED_GITHUB_TOKEN", raising=False)
+    app = _run(web_app)
+    app.text_input(key="github_url").input("https://github.com/example/private")
+    _run(app)
+    assert any("enter a GitHub API key" in warning.value for warning in app.warning)
 
 
 def test_generated_dfd_survives_reruns_and_replacement_requires_confirmation(web_app, monkeypatch):

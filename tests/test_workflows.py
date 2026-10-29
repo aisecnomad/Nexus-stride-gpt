@@ -51,19 +51,26 @@ def test_protection_configuration_requires_existing_check_names():
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="GitHub's gate runs in Bash")
-@pytest.mark.parametrize("changed,result,success", [
-    (None, None, True),
-    ("PYTHON_SECURITY", "failure", False),
-    ("SECRET_SCANNING", "cancelled", False),
-    ("CODEQL_ANALYSIS", "skipped", False),
-    ("DEPENDENCY_REVIEW", "failure", False),
-    ("DOCKER_SECURITY", "cancelled", False),
-    ("DEPENDENCY_REVIEW", "success", True),
-    ("DOCKER_SECURITY", "success", True),
+@pytest.mark.parametrize("event,dependency,docker,changed,result,success", [
+    ("pull_request", "success", "skipped", None, None, True),
+    ("push", "skipped", "success", None, None, True),
+    ("workflow_dispatch", "skipped", "success", None, None, True),
+    ("schedule", "skipped", "skipped", None, None, True),
+    ("unknown", "skipped", "skipped", None, None, False),
+    ("pull_request", "skipped", "skipped", None, None, False),
+    ("pull_request", "failure", "skipped", None, None, False),
+    ("pull_request", "success", "failure", None, None, False),
+    ("push", "skipped", "skipped", None, None, False),
+    ("push", "failure", "success", None, None, False),
+    ("schedule", "skipped", "cancelled", None, None, False),
+    ("pull_request", "success", "skipped", "PYTHON_SECURITY", "failure", False),
+    ("pull_request", "success", "skipped", "SECRET_SCANNING", "cancelled", False),
+    ("pull_request", "success", "skipped", "CODEQL_ANALYSIS", "skipped", False),
+    ("pull_request", "success", "skipped", "WHEEL_AUDIT", "skipped", False),
 ])
-def test_security_summary_exit_status(tmp_path, changed, result, success):
+def test_security_summary_exit_status(tmp_path, event, dependency, docker, changed, result, success):
     job = _workflow("security.yml")["jobs"]["security-summary"]
-    assert {"python-security", "secret-scanning", "codeql-analysis", "dependency-review", "docker-security"} <= set(job["needs"])
+    assert {"python-security", "secret-scanning", "codeql-analysis", "dependency-review", "docker-security", "wheel-audit"} <= set(job["needs"])
     assert job["if"] == "always()"
     environment = {
         **os.environ,
@@ -71,8 +78,10 @@ def test_security_summary_exit_status(tmp_path, changed, result, success):
         "PYTHON_SECURITY": "success",
         "SECRET_SCANNING": "success",
         "CODEQL_ANALYSIS": "success",
-        "DEPENDENCY_REVIEW": "skipped",
-        "DOCKER_SECURITY": "skipped",
+        "DEPENDENCY_REVIEW": dependency,
+        "DOCKER_SECURITY": docker,
+        "WHEEL_AUDIT": "success",
+        "EVENT_NAME": event,
     }
     if changed is not None:
         environment[changed] = result

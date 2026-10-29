@@ -10,6 +10,7 @@ import fnmatch
 import json
 import os
 import re
+import stat
 import time
 from pathlib import Path
 from typing import Any
@@ -46,6 +47,26 @@ _NESTED_QUANTIFIER_RE = re.compile(r"\([^)]*[+*?{][^)]*\)\s*[+*]")
 # and says nothing about the system's design, so the agent may not touch it.
 VCS_METADATA_DIRS = {".git", ".hg", ".svn"}
 
+# These names are deliberately conservative; arbitrary source files can still
+# contain credentials. Analyze a sanitized checkout and use provider terms
+# appropriate for the data. No name-based denylist is a complete secret scanner.
+SENSITIVE_DIRS = {".ssh", ".aws", ".kube", ".gnupg"}
+SENSITIVE_NAMES = {"credentials", ".netrc", ".npmrc", ".pypirc", "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519"}
+SENSITIVE_SUFFIXES = {".pem", ".key", ".p12", ".pfx", ".jks", ".keystore"}
+_SECRET_MARKERS = re.compile(
+    r"-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----"
+    r"|\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"
+    r"|\bgh[pousr]_[A-Za-z0-9]{36,255}\b"
+    r"|\bsk-proj-[A-Za-z0-9_-]{20,}\b"
+)
+
+
+def _sensitive_component(name: str) -> bool:
+    name = name.casefold()
+    return (name in SENSITIVE_DIRS or name in SENSITIVE_NAMES or name == ".env"
+            or name.startswith(".env.") or Path(name).suffix in SENSITIVE_SUFFIXES)
+
+
 # Directories to skip during search/grep
 SKIP_DIRS = VCS_METADATA_DIRS | {
     "node_modules", "__pycache__", ".venv", "venv", ".env",
@@ -69,6 +90,8 @@ def _sandbox_violation(root_resolved: Path, resolved: Path) -> str | None:
     parts = resolved.relative_to(root_resolved).parts
     if any(part.casefold() in VCS_METADATA_DIRS for part in parts):
         return "Access to version-control metadata denied"
+    if any(_sensitive_component(part) for part in parts):
+        return "Access to sensitive credential paths denied"
     return None
 
 
@@ -90,6 +113,8 @@ def resolve_safe_path(root: Path, user_path: str) -> Path:
     """
     # Treat as relative to root even if it looks absolute
     cleaned = user_path.lstrip("/")
+    if any(_sensitive_component(part) for part in Path(cleaned).parts):
+        raise ValueError("Access to sensitive credential paths denied")
     resolved = (root / cleaned).resolve()
     reason = _sandbox_violation(root.resolve(), resolved)
     if reason:
@@ -102,7 +127,7 @@ _resolve_safe_path = resolve_safe_path
 
 
 def _should_skip(name: str) -> bool:
-    return name in SKIP_DIRS
+    return name.casefold() in SKIP_DIRS or _sensitive_component(name)
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +149,48 @@ def _read_source_text(path: Path) -> str | None:
     if len(data) > MAX_SOURCE_FILE_BYTES:
         return None
     return data.decode("utf-8", errors="replace")
+
+
+def read_confined_text(root: Path, path: str, *, max_bytes: int = MAX_SOURCE_FILE_BYTES) -> str | None:
+    """Read through pinned directory descriptors without following swapped links.
+
+    Requires descriptor-relative opens and O_NOFOLLOW. Fail closed on platforms
+    lacking those primitives; a private, sanitized checkout is still needed for
+    hard links, bind mounts and credentials in ordinary-looking source files.
+    """
+    resolved = resolve_safe_path(root, path)
+    root_resolved = root.resolve()
+    relative = resolved.relative_to(root_resolved)
+    if not relative.parts:
+        raise OSError("not a regular file")
+    if not (os.open in os.supports_dir_fd and hasattr(os, "O_NOFOLLOW") and hasattr(os, "O_DIRECTORY")):
+        raise OSError("confined file reads are unavailable on this platform")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    fd = os.open(root_resolved, flags)
+    try:
+        for component in relative.parts[:-1]:
+            next_fd = os.open(component, flags, dir_fd=fd)
+            os.close(fd)
+            fd = next_fd
+        file_fd = os.open(relative.parts[-1], os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_NONBLOCK", 0), dir_fd=fd)
+        try:
+            info = os.fstat(file_fd)
+            if not stat.S_ISREG(info.st_mode):
+                raise OSError("not a regular file")
+            if info.st_size > max_bytes:
+                return None
+            with os.fdopen(file_fd, "rb", closefd=False) as stream:
+                data = stream.read(max_bytes + 1)
+        finally:
+            os.close(file_fd)
+        if len(data) > max_bytes:
+            return None
+        text = data.decode("utf-8", errors="replace")
+        if _SECRET_MARKERS.search(text):
+            raise PermissionError("file contains a credential-like value")
+        return text
+    finally:
+        os.close(fd)
 
 
 def read_file(
@@ -156,7 +223,7 @@ def read_file(
     if start_line is not None and end_line is not None and end_line < start_line:
         return f"Error: end_line ({end_line}) is before start_line ({start_line})"
     try:
-        content = _read_source_text(resolved)
+        content = read_confined_text(root, path, max_bytes=MAX_SOURCE_FILE_BYTES)
     except Exception as e:
         return f"Error reading {path}: {e}"
     if content is None:
@@ -251,6 +318,8 @@ def search_files(root: Path, pattern: str, path: str = ".") -> str:
         # Prune skipped directories
         dirnames[:] = [d for d in dirnames if not _should_skip(d)]
         for filename in filenames:
+            if _should_skip(filename):
+                continue
             if fnmatch.fnmatch(filename, pattern):
                 full = Path(dirpath) / filename
                 rel = str(full.relative_to(root_resolved))
@@ -316,6 +385,7 @@ def grep_content(
     results: list[dict[str, Any]] = []
     deadline = time.monotonic() + GREP_SCAN_TIMEOUT_SECONDS
     oversized_files = 0
+    sensitive_files = 0
 
     def incomplete(reason: str, **details: Any) -> str:
         return json.dumps([
@@ -324,6 +394,7 @@ def grep_content(
                 "truncated": True,
                 "reason": reason,
                 "oversized_files_skipped": oversized_files,
+                **({"sensitive_paths_skipped": sensitive_files} if sensitive_files else {}),
                 **details,
             },
         ])
@@ -337,8 +408,13 @@ def grep_content(
         if time.monotonic() >= deadline:
             return incomplete("scan_timeout", message="Narrow the search path or pattern.")
         if hasattr(dirnames, '__delitem__'):
+            sensitive_files += sum(1 for d in dirnames if _sensitive_component(d))
             dirnames[:] = [d for d in dirnames if not _should_skip(d)]
         for filename in filenames:
+            if _should_skip(filename):
+                if _sensitive_component(filename):
+                    sensitive_files += 1
+                continue
             if time.monotonic() >= deadline:
                 return incomplete("scan_timeout", message="Narrow the search path or pattern.")
             full = Path(dirpath) / filename
@@ -355,8 +431,11 @@ def grep_content(
             if not _link_target_allowed(root_resolved, full) or not full.is_file():
                 continue
             try:
-                text = _read_source_text(full)
-            except (OSError, UnicodeDecodeError):
+                text = read_confined_text(root, str(full.relative_to(root_resolved)), max_bytes=MAX_SOURCE_FILE_BYTES)
+            except PermissionError:
+                sensitive_files += 1
+                continue
+            except (OSError, ValueError, UnicodeDecodeError):
                 continue
             if text is None:
                 oversized_files += 1
@@ -380,6 +459,8 @@ def grep_content(
                         return incomplete("result_limit", total_limit=max_results)
     if oversized_files:
         return incomplete("file_size_limit", max_file_bytes=MAX_SOURCE_FILE_BYTES)
+    if sensitive_files:
+        return incomplete("sensitive_files_skipped")
     return json.dumps(results)
 
 

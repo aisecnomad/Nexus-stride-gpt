@@ -186,9 +186,9 @@ When adding a new provider or model, the kwarg shape almost always needs a new b
 
 ## Releasing
 
-- **Releases are automated.** Pushing a `vX.Y.Z` tag triggers `.github/workflows/release.yml`: it verifies the tag matches `pyproject.toml`'s `version`, runs the test matrix, publishes the CLI to PyPI (OIDC trusted publishing, no token), pushes the multi-arch UI image to Docker Hub `mrwadams/stridegpt`, and cuts a GitHub Release. Don't build or publish by hand.
-- The tag must match `pyproject.toml` exactly or the `verify` job fails before anything publishes. See `RELEASING.md` for the cut-a-release steps and the one-time PyPI / Docker Hub credential setup.
-- Every push and PR is gated by `.github/workflows/ci.yml` (ruff + pytest on 3.12/3.13/3.14). Keep it green.
+Tags build release-candidate artifacts only; no PyPI, Docker Hub or GitHub release
+publication is configured for this fork. See `RELEASING.md` before establishing
+Nexus-owned release namespaces. Preserve upstream attribution and licence notices.
 
 ## A few things to NOT do
 

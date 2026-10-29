@@ -22,12 +22,11 @@ import re
 import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
-from functools import lru_cache
 from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
-from stride_gpt.agent.tools import resolve_safe_path
+from stride_gpt.agent.tools import read_confined_text
 
 # A snippet is meant to be the few lines where the weakness lives. Past these
 # bounds we refuse rather than truncate-then-match: a partial match reports a
@@ -147,21 +146,13 @@ def verify_one(root: Path, path: str, snippet: str) -> EvidenceCheck:
         )
 
     try:
-        resolved = resolve_safe_path(root, clean_path)
-    except ValueError as e:
-        return _unverified(clean_path, snippet, str(e))
-    except OSError as e:  # symlink loop, unreadable parent
-        return _unverified(clean_path, snippet, f"could not resolve {clean_path}: {e}")
-
-    if not resolved.is_file():
-        return _unverified(clean_path, snippet, "not a file in the analysed codebase")
-
-    try:
-        stat = resolved.stat()
-        if stat.st_size > MAX_VERIFY_BYTES:
+        content = read_confined_text(root, clean_path, max_bytes=MAX_VERIFY_BYTES)
+        if content is None:
             return _unverified(clean_path, snippet, "file is too large to verify")
-        haystack = _compacted(str(resolved), stat.st_mtime_ns, stat.st_size)
-    except OSError as e:
+        haystack = _compacted(content)
+    except FileNotFoundError:
+        return _unverified(clean_path, snippet, "not a file in the analysed codebase")
+    except (ValueError, OSError) as e:
         return _unverified(clean_path, snippet, f"could not read {clean_path}: {e}")
 
     needles = _candidate_needles(snippet)
@@ -236,18 +227,13 @@ def _normalise_line(line: str) -> str:
     return " ".join(unicodedata.normalize("NFC", line).split())
 
 
-@lru_cache(maxsize=64)
-def _compacted(path_str: str, mtime_ns: int, size: int) -> tuple[tuple[str, int, bool], ...]:
+def _compacted(content: str) -> tuple[tuple[str, int, bool], ...]:
     """Normalised non-blank lines of a file: text, 1-based number, is-comment.
-
-    Keyed on mtime and size so an edited file drops out of the cache. Only the
-    compacted form is held, never the raw text.
 
     Splitting with ``splitlines()`` is load-bearing: ``read_file`` and
     ``grep_content`` both use it, so the line numbers reported here are the
     same ones the model saw.
     """
-    content = Path(path_str).read_text(errors="replace")
     out = []
     for n, line in enumerate(content.splitlines(), 1):
         norm = _normalise_line(line)

@@ -74,6 +74,7 @@ from openai import OpenAI
 from provider_keys import (
     PROVIDER_API_KEY_STATE,
     has_server_api_key,
+    has_shared_github_api_key,
     resolve_github_api_key,
     resolve_provider_api_key,
 )
@@ -563,6 +564,8 @@ def analyze_github_repo(repo_url):
     hostname = (parsed_url.hostname or "").lower()
     ghe_host = os.getenv("STRIDE_GPT_GHE_HOST", "").strip().lower()
     token = resolve_github_api_key(st.session_state)
+    if not token:
+        raise ValueError("Enter a GitHub API key for this session to analyze a repository.")
 
     if hostname == "github.com":
         g = Github(token)
@@ -1064,8 +1067,8 @@ with st.sidebar:
             st.session_state["use_thinking"] = False
 
     # Add GitHub API key input field to the sidebar
-    if os.getenv("GITHUB_API_KEY"):
-        st.caption("A server GitHub credential is configured. Leave the field empty to use it.")
+    if has_shared_github_api_key():
+        st.caption("A shared server GitHub credential is enabled. Leave the field empty to use it.")
     github_api_key = st.text_input(
         "Enter your GitHub API key (optional):",
         value=st.session_state.get("github_api_key", ""),
