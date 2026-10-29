@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import base64
 import io
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -14,6 +16,14 @@ from stride_gpt.models import PROVIDERS
 
 APP = Path(__file__).resolve().parents[1] / "apps" / "web" / "main.py"
 DFD = "flowchart TD\n Browser-->API"
+CLOUD_DFD_PROVIDERS = [
+    ("OpenAI API", "OPENAI_API_KEY", "openai_api_key", "get_dfd_openai"),
+    ("Anthropic API", "ANTHROPIC_API_KEY", "anthropic_api_key", "get_dfd_anthropic"),
+    ("Google AI API", "GOOGLE_API_KEY", "google_api_key", "get_dfd_google"),
+    ("Mistral API", "MISTRAL_API_KEY", "mistral_api_key", "get_dfd_mistral"),
+    ("Groq API", "GROQ_API_KEY", "groq_api_key", "get_dfd_groq"),
+    ("DeepSeek API", "DEEPSEEK_API_KEY", "deepseek_api_key", "get_dfd_deepseek"),
+]
 
 
 @pytest.fixture
@@ -49,6 +59,18 @@ def _generate(app):
     return _run(app)
 
 
+def _assert_no_browser_secret(app, *secrets):
+    """Inspect the protobufs sent to the browser, not just rendered masking."""
+    payloads = b"".join(
+        node.proto.SerializeToString()
+        for node in app
+        if getattr(node, "proto", None) is not None
+    )
+    for marker in secrets:
+        assert marker.encode() not in payloads
+        assert marker not in repr(app.session_state.to_dict())
+
+
 @pytest.mark.parametrize(
     "provider",
     [
@@ -72,38 +94,108 @@ def test_server_credentials_never_enter_browser_payloads(web_app, monkeypatch, p
 
     # Protobuf fields are the actual UI messages serialized to the browser;
     # checking only password-field appearance would miss the original leak.
-    payloads = b"".join(
-        node.proto.SerializeToString()
-        for node in app
-        if getattr(node, "proto", None) is not None
-    )
-    for marker in secrets:
-        assert marker.encode() not in payloads
-        assert marker not in repr(app.session_state.to_dict())
+    _assert_no_browser_secret(app, *secrets)
     assert all(not field.value for field in app.text_input if "API key" in field.label)
+    _run(app)
+    _assert_no_browser_secret(app, *secrets)
 
 
-def test_server_key_is_usable_and_user_override_can_be_cleared(web_app, monkeypatch):
+@pytest.mark.parametrize("provider,env_var,state_key,provider_function", CLOUD_DFD_PROVIDERS)
+def test_server_key_is_usable_and_user_override_can_be_cleared(
+    web_app, monkeypatch, provider, env_var, state_key, provider_function
+):
     import dfd
 
-    monkeypatch.setenv("OPENAI_API_KEY", "fake-server-openai-key")
-    provider = Mock(return_value=DFD)
-    monkeypatch.setattr(dfd, "get_dfd_openai", provider)
+    server_key = f"fake-server-{env_var}"
+    monkeypatch.setenv(env_var, server_key)
+    generate_dfd = Mock(return_value=DFD)
+    monkeypatch.setattr(dfd, provider_function, generate_dfd)
     app = _describe(_run(web_app))
+    app.selectbox(key="model_provider").select(provider)
+    _run(app)
 
     _generate(app)
-    assert provider.call_args.args[0] == "fake-server-openai-key"
-    assert app.text_input(key="credential_openai_api_key").value == ""
+    assert generate_dfd.call_args.args[0] == server_key
+    assert app.text_input(key=f"credential_{state_key}").value == ""
+    _assert_no_browser_secret(app, server_key)
 
-    app.text_input(key="credential_openai_api_key").input("fake-user-override")
+    app.text_input(key=f"credential_{state_key}").input("fake-user-override")
+    _run(app)
     _run(app)
     _generate(app)
-    assert provider.call_args.args[0] == "fake-user-override"
+    assert generate_dfd.call_args.args[0] == "fake-user-override"
+    _assert_no_browser_secret(app, server_key)
 
-    app.text_input(key="credential_openai_api_key").input("")
+    # Streamlit cleans up invisible widgets when switching providers. Keep the
+    # user's override without promoting the server fallback into session state.
+    other_provider = "Anthropic API" if provider == "OpenAI API" else "OpenAI API"
+    app.selectbox(key="model_provider").select(other_provider)
+    _run(app)
+    app.selectbox(key="model_provider").select(provider)
+    _run(app)
+    assert app.text_input(key=f"credential_{state_key}").value == "fake-user-override"
+
+    app.text_input(key=f"credential_{state_key}").input("")
     _run(app)
     _generate(app)
-    assert provider.call_args.args[0] == "fake-server-openai-key"
+    assert generate_dfd.call_args.args[0] == server_key
+    _assert_no_browser_secret(app, server_key)
+
+
+def test_github_token_resolves_server_side_and_override_can_be_cleared(web_app, monkeypatch):
+    """Exercise the actual GitHub ingestion path without accessing GitHub."""
+    import github
+    import tiktoken
+
+    server_key = "fake-server-github-key"
+    monkeypatch.setenv("GITHUB_API_KEY", server_key)
+    repository = Mock(default_branch="main")
+    repository.get_git_tree.return_value = SimpleNamespace(tree=[])
+    repository.get_contents.return_value = SimpleNamespace(
+        content=base64.b64encode(b"A simple example project.")
+    )
+    client = Mock()
+    client.get_repo.return_value = repository
+    make_client = Mock(return_value=client)
+    monkeypatch.setattr(github, "Github", make_client)
+    monkeypatch.setattr(
+        tiktoken, "encoding_for_model", lambda _model: SimpleNamespace(encode=lambda text: text)
+    )
+    app = _run(web_app)
+
+    for index, (user_key, expected_key) in enumerate([
+        ("", server_key),
+        ("fake-user-github-key", "fake-user-github-key"),
+        ("", server_key),
+    ]):
+        app.text_input(key="credential_github_api_key").input(user_key)
+        _run(app)
+        app.text_input(key="github_url").input(f"https://github.com/example/project-{index}")
+        _run(app)
+        assert make_client.call_args.args[0] == expected_key
+        assert app.text_input(key="credential_github_api_key").value == user_key
+        _run(app)
+        _assert_no_browser_secret(app, server_key)
+
+
+def test_lm_studio_user_key_can_be_cleared(web_app, monkeypatch):
+    import openai
+
+    make_client = Mock()
+    make_client.return_value.models.list.return_value = SimpleNamespace(
+        data=[SimpleNamespace(id="local-model")]
+    )
+    monkeypatch.setattr(openai, "OpenAI", make_client)
+    app = _run(web_app)
+    app.selectbox(key="model_provider").select("LM Studio Server")
+    _run(app)
+    app.text_input(key="credential_lm_studio_api_key").input("fake-local-key")
+    _run(app)
+    assert make_client.call_args.kwargs["api_key"] == "fake-local-key"
+    app.text_input(key="credential_lm_studio_api_key").input("")
+    _run(app)
+    assert app.session_state["lm_studio_api_key"] == ""
+    assert make_client.call_args.kwargs["api_key"] == "not-needed"
 
 
 def test_generated_dfd_survives_reruns_and_replacement_requires_confirmation(web_app, monkeypatch):

@@ -4,6 +4,9 @@ All notable changes to STRIDE-GPT. Releases are cut from tags (see [RELEASING.md
 
 ## Unreleased
 
+- **Quick-mode authorization:** Reference-only analysis now dispatches only packaged reference tools. Model-returned filesystem and unknown tool names are denied before execution, even if a provider returns a tool that was not advertised.
+- **Response parsing:** Valid JSON is parsed before any recovery. Comment and trailing-comma recovery respects quoted strings, preserving URLs and escapes; malformed object, threat, and suggestion shapes return explicit errors.
+- **Merge-policy configuration:** A reviewed `main` branch-protection payload requires lint, all three Python test checks, the security summary, an approving review, and resolved conversations. An administrator must activate it; committing the configuration does not enable GitHub protection.
 - **Credential isolation:** Server-provided LLM and GitHub credentials are resolved only on the server, never prefilled in browser password widgets. Per-session user credentials remain supported. Compose publishes the UI only on loopback by default.
 - **Safe exports and resume scope:** Checkpoints, reports, and companion exports use exclusive temporary files and atomic replacement instead of following pre-planted symlinks. Checkpoints bind to the analysis directory and committed tree as well as the commit and model configuration; old checkpoints without target identity require a fresh analysis.
 - **Bounded agent searches:** Regex matching has an engine-enforced timeout and a cooperative whole-search deadline. Input reads are capped, and incomplete searches explicitly report timeouts, result caps, or skipped oversized files.

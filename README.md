@@ -11,11 +11,11 @@
 
 > **About this repository.** Nexus-stride-gpt is where we collaborate on enhancements to [mrwadams/stride-gpt](https://github.com/mrwadams/stride-gpt). It holds a snapshot of upstream commit [`8e9fb82`](https://github.com/mrwadams/stride-gpt/commit/8e9fb82a3c99878ec92efa86ab5e704e681f2105) (27 October 2026), followed by the enhancement commits listed under *Unreleased* in the [changelog](CHANGELOG.md). STRIDE GPT is © Matt Adams and released under the MIT License; see [License](#license).
 
-STRIDE GPT is an AI-powered threat modelling tool. Point it at a codebase or describe an application, and it produces a STRIDE threat model. Threats are grounded in code evidence it has verified, annotated with OWASP and MITRE ATT&CK/ATLAS identifiers, tagged with the security controls that would mitigate them, and mapped to **AIUC-1**, **ISO/IEC 42001**, **ISO/IEC 27001** and the **EU AI Act**.
+STRIDE GPT is an AI-powered threat modelling tool. Point it at a codebase or describe an application, and it produces a STRIDE threat model. For codebase analyses, supplied evidence snippets are checked against the source; missing or unmatched evidence remains explicitly marked. Threats can carry OWASP and MITRE ATT&CK/ATLAS identifiers, recommended security controls, and mappings to **AIUC-1**, **ISO/IEC 42001**, **ISO/IEC 27001** and the **EU AI Act**.
 
 It ships as two products on one shared library:
 
-- **CLI** (`pip install stride-gpt`): an agent that plans an analysis, explores a real codebase with sandboxed file tools, and reports per-subsystem threats with verified evidence. It also does single-shot threat models from a written description.
+- **CLI** (`pip install stride-gpt`): an agent that plans an analysis, explores a real codebase with sandboxed file tools, and reports per-subsystem threats with evidence-check results. It also does single-shot threat models from a written description.
 - **Streamlit web UI**: a hosted, single-shot threat modeller with attack trees, data flow diagrams, mitigations, DREAD scoring, Gherkin test cases and a compliance view.
 
 ## What's new
@@ -99,7 +99,7 @@ flowchart LR
 
 **Analysis**
 - **Agentic codebase analysis**: the agent plans, explores and synthesises across subsystems, with resumable runs, per-phase token accounting and a run manifest for audit.
-- **Verified evidence**: each threat cites the code it came from, the snippet is matched against the file, and the line range flows into SARIF locations.
+- **Evidence checks**: supplied snippets are matched against files, and verified line ranges flow into SARIF locations. Findings without verified evidence remain visibly marked. A matching citation does not establish exploitability or prove the model's reasoning.
 - **Single-shot mode**: `stride-gpt quick` works from a written description. The web UI also accepts an architecture diagram, a draw.io diagram or a GitHub repository (GitHub Enterprise supported).
 - **AI and agentic systems**: OWASP Top 10 for LLM Applications and for Agentic Applications, plus an AI Insider Threat lens that treats a high-autonomy agent as a potentially untrusted insider.
 - **Architectural pattern detection** for RAG, multi-agent systems, code execution, tool/MCP ecosystems and persistent memory (inspired by [CSA MAESTRO](https://cloudsecurityalliance.org/blog/2025/02/06/agentic-ai-threat-modeling-framework-maestro)).
@@ -491,6 +491,7 @@ STRIDE GPT is designed for local, single-user use. The web UI holds data in serv
 - **API keys are credentials.** Keep them in environment variables, `~/.stride-gpt/.env` or a secrets manager, never in version control, and set spending limits with your provider.
 - **Operator credentials stay server-side.** The web UI does not prefill server-provided keys into password fields. A user can supply a session-specific key instead. Compose publishes the UI on `127.0.0.1:8501` by default.
 - **Threat models are sensitive.** A report is a map of your weaknesses: store and share it like one.
+- **Analysis quality needs human review.** Unit tests verify application behavior, not threat-detection precision or recall. The repository does not yet provide a labelled evaluation corpus or measured accuracy across providers.
 - **Team deployments need hardening.** The web UI has no built-in authentication. Before anyone else can reach it, follow [Deployment hardening](docs/deployment-hardening.md): an OIDC identity-aware proxy, TLS 1.3 (and mTLS behind the proxy), egress allow-listing to your model provider, and centralised logging.
 
 Dependencies are pinned in `uv.lock`, updated by Dependabot, and scanned in CI with Bandit, CodeQL, pip-audit, Gitleaks and Trivy. See [SECURITY.md](SECURITY.md) for the full policy.

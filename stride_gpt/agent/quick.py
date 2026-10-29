@@ -13,21 +13,52 @@ model out, with the agent picking the right reference lenses along the way.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
-from stride_gpt.agent.tools import AGENT_TOOLS, execute_tool
+from stride_gpt.agent.tools import AGENT_TOOLS
 from stride_gpt.core.controls import keep_known_controls
 from stride_gpt.core.json_extract import extract_json_object
 from stride_gpt.core.llm import call_llm, call_llm_with_tools
-from stride_gpt.core.mitre import normalize_threat_mitre
 from stride_gpt.core.prompts import quick_base_prompt
-from stride_gpt.core.schemas import LLMConfig, ModelPair, ThreatModelOutput
+from stride_gpt.core.prompts.variants import list_references, load_reference
+from stride_gpt.core.schemas import LLMConfig, ModelPair, ThreatModelOutput, ToolCallResult
+from stride_gpt.core.threat_model import validate_threat_model_data
 
 # Quick analysis only gets the reference-card tools — no filesystem since
 # there's no codebase to explore.
+QUICK_TOOL_NAMES = frozenset({"load_reference", "list_references"})
 QUICK_TOOLS = [
-    t for t in AGENT_TOOLS if t["function"]["name"] in {"load_reference", "list_references"}
+    t for t in AGENT_TOOLS if t["function"]["name"] in QUICK_TOOL_NAMES
 ]
+
+
+def _execute_quick_tool(tool_call: ToolCallResult, loaded_refs: set[str]) -> str:
+    """Enforce the reference-only capability boundary on model output.
+
+    Advertising a subset of tools to a provider does not authorize execution:
+    a provider or a local model can still return an unadvertised function name.
+    This dispatcher has no analysis root or access to the filesystem executor.
+    Every refused call still receives a tool result to preserve chat protocol.
+    """
+    if tool_call.function_name not in QUICK_TOOL_NAMES:
+        return (
+            f"Error: tool '{tool_call.function_name}' is not available in quick analysis. "
+            "Only list_references and load_reference are allowed."
+        )
+    if tool_call.parse_error:
+        return (
+            f"Error: {tool_call.parse_error}. "
+            "Re-issue the call with a valid JSON object."
+        )
+    try:
+        if tool_call.function_name == "list_references":
+            return json.dumps(list_references(), indent=2)
+        name = tool_call.arguments["name"]
+        result = load_reference(name)
+    except Exception as e:
+        return f"Error executing {tool_call.function_name}: {e}"
+    if not result.startswith("Error:"):
+        loaded_refs.add(name)
+    return result
 
 
 def run_quick_analysis(
@@ -73,8 +104,6 @@ def run_quick_analysis(
     # cards actually shaped the output.
     loaded_refs: set[str] = set()
 
-    target_path = Path("/")  # load_reference ignores the root parameter
-
     while llm_calls < max_llm_calls:
         response = call_llm_with_tools(models.for_architect(), messages, QUICK_TOOLS)
         llm_calls += 1
@@ -98,8 +127,8 @@ def run_quick_analysis(
                         "earlier tool response instead of requesting it again."
                     )
                 else:
-                    result = execute_tool(target_path, tc, loaded_refs=loaded_refs)
-                    if not tc.parse_error:
+                    result = _execute_quick_tool(tc, loaded_refs)
+                    if not tc.parse_error and not result.startswith("Error:"):
                         tool_cache[key] = result
                 tool_calls += 1
                 tools_used[tc.function_name] = tools_used.get(tc.function_name, 0) + 1
@@ -163,17 +192,15 @@ def _parse_threat_model(content: str) -> ThreatModelOutput | None:
     data = extract_json_object(content)
     if data is None:
         return None
-    threats = data.get("threat_model", [])
-    if isinstance(threats, list):
-        # The saved report is what downstream tools import; an invented
-        # control ID shouldn't reach it.
-        for threat in threats:
-            keep_known_controls(threat)
-            threat.update(normalize_threat_mitre(threat))
-    return ThreatModelOutput(
-        threat_model=threats,
-        improvement_suggestions=data.get("improvement_suggestions", []),
-    )
+    try:
+        output = validate_threat_model_data(data)
+    except ValueError:
+        return None
+    # Validate before operating on threat dictionaries. The saved report is
+    # what downstream tools import; invented control IDs must not reach it.
+    for threat in output.threat_model:
+        keep_known_controls(threat)
+    return output
 
 
 def _retry_as_json(config: LLMConfig, messages: list[dict]) -> ThreatModelOutput:
@@ -183,13 +210,17 @@ def _retry_as_json(config: LLMConfig, messages: list[dict]) -> ThreatModelOutput
     function-calling metadata.
     """
     clean = _strip_tool_artifacts(messages)
-    clean.append({
-        "role": "user",
-        "content": (
-            "Respond with ONLY a valid JSON object matching the schema in your "
-            "instructions. No prose, no markdown fences, no commentary."
-        ),
-    })
+    instruction = (
+        "Respond with ONLY a valid JSON object matching the schema in your "
+        "instructions. No prose, no markdown fences, no commentary."
+    )
+    if clean and clean[-1].get("role") == "user":
+        # A first-turn parse failure or call-limit coercion already ends in
+        # a user turn. Keep a strict provider's alternating-message protocol
+        # and do not modify the caller's original message dictionary.
+        clean[-1] = {**clean[-1], "content": f"{clean[-1].get('content', '')}\n\n{instruction}"}
+    else:
+        clean.append({"role": "user", "content": instruction})
     json_config = config.model_copy(update={"response_format": "json"})
     response = call_llm(json_config, clean)
     parsed = _parse_threat_model(response.content)

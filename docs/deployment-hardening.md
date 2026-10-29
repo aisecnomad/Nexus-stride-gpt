@@ -22,7 +22,7 @@ Several of these are already mitigated in the code. The rest is configuration, c
 ## What STRIDE-GPT already does
 
 - **Sandboxed file tools.** The agent's `read_file`, `grep_content` and `list_directory` resolve every path inside the target directory. They refuse traversal, symlinks that point outside, and version-control metadata (`.git`, `.hg`, `.svn`), which is where `actions/checkout` writes the job token. Regex searches have engine-enforced timeouts and a whole-search deadline; file reads are bounded and report truncation or skipped oversized files.
-- **Evidence verification.** Quoted snippets are checked against the file on disk, so a model steered by planted instructions cannot fabricate code evidence unnoticed.
+- **Evidence verification.** Quoted snippets are checked against the file on disk, with missing or unmatched citations marked explicitly. Matching source text establishes citation provenance; it does not prove exploitability or the model's interpretation.
 - **Output encoding.** Model fields in Markdown tables are treated as literal text. Free-form model Markdown is parsed into a restricted subset: images and active links are removed, and raw HTML is inert. HTML reports escape model text with `html.escape`, and Mermaid runs with `securityLevel: 'strict'`. Control IDs and MITRE IDs are filtered to their packaged catalogues; MITRE names come from the catalogue rather than the model. Catalogue membership does not prove that a technique applies to the finding.
 - **Hardened parsing.** Uploaded draw.io XML is parsed with `defusedxml`, and the editor's `postMessage` origin is scoped to the configured draw.io host.
 - **Shareable run manifests.** Manifests exclude API keys and endpoints and redact filesystem paths.

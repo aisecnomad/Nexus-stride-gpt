@@ -65,3 +65,26 @@ def test_normalization_does_not_modify_the_original_threat():
     normalized = normalize_threat_mitre(threat)
     assert threat["MITRE_ATTACK"][0]["name"] == "Forged"
     assert normalized["MITRE_ATTACK"][0]["name"] == "Exploit Public-Facing Application"
+
+
+def test_malformed_entries_cannot_bypass_catalogue_membership():
+    assert normalize_techniques([
+        None, 1190, ["T1190"], {"id": ["T1190"]}, {"id": None},
+        {"id": "T1190\n![leak](https://attacker.invalid)"},
+        {"id": "T1190", "name": '<img src="https://attacker.invalid">'},
+    ]) == [("T1190", "Exploit Public-Facing Application")]
+
+
+@pytest.mark.parametrize("card", ["", "- **T1190** — First name\n- **T1190** — Other name\n"])
+def test_broken_packaged_catalogues_fail_closed(tmp_path, monkeypatch, card):
+    import stride_gpt.core.mitre as mitre
+
+    (tmp_path / "mitre_enterprise.md").write_text(card)
+    (tmp_path / "mitre_atlas.md").write_text("- **AML.T0051** — LLM Prompt Injection\n")
+    monkeypatch.setattr(mitre, "files", lambda package: tmp_path)
+    technique_catalog.cache_clear()
+    try:
+        with pytest.raises(ValueError, match=r"no techniques|Conflicting"):
+            normalize_techniques(["T1190"])
+    finally:
+        technique_catalog.cache_clear()

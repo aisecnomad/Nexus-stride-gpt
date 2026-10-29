@@ -132,11 +132,8 @@ def _parse_threat_model_response(content: str) -> ThreatModelOutput:
     cleaned = _clean_json_content(content)
     try:
         data = json.loads(cleaned)
-        return ThreatModelOutput(
-            threat_model=[normalize_threat_mitre(threat) for threat in data.get("threat_model", [])],
-            improvement_suggestions=data.get("improvement_suggestions", []),
-        )
-    except json.JSONDecodeError as e:
+        return validate_threat_model_data(data)
+    except ValueError as e:
         raw = (content or "").strip()
         snippet = raw[:500].replace("\n", " ").replace("|", "\\|") or "(empty response)"
         truncated = " ..." if len(raw) > 500 else ""
@@ -149,19 +146,105 @@ def _parse_threat_model_response(content: str) -> ThreatModelOutput:
                 }
             ],
             improvement_suggestions=[
-                f"JSON parse error: {e.msg} (line {e.lineno}, col {e.colno})",
+                (
+                    f"JSON parse error: {e.msg} (line {e.lineno}, col {e.colno})"
+                    if isinstance(e, json.JSONDecodeError)
+                    else f"JSON schema error: {e}"
+                ),
                 f"Raw LLM response (first 500 chars): {snippet}{truncated}",
                 "Try again — local models sometimes need a second attempt to produce valid JSON",
             ],
         )
 
 
+def validate_threat_model_data(data: object) -> ThreatModelOutput:
+    """Validate the output shape before it reaches renderers and exports.
+
+    Shared by the web single-shot and CLI quick parsers. Empty/missing
+    arrays retain the older response contract. A malformed
+    array or threat is an explicit generation failure, never an apparently
+    successful empty report or a renderer exception.
+    """
+    if not isinstance(data, dict):
+        raise ValueError("Expected a JSON object")
+    threats = data.get("threat_model", [])
+    suggestions = data.get("improvement_suggestions", [])
+    if not isinstance(threats, list):
+        raise ValueError("threat_model must be an array of objects")
+    if not isinstance(suggestions, list) or any(not isinstance(s, str) for s in suggestions):
+        raise ValueError("improvement_suggestions must be an array of strings")
+    for index, threat in enumerate(threats):
+        if not isinstance(threat, dict):
+            raise ValueError(f"threat_model[{index}] must be an object")
+        for key in ("Threat Type", "Scenario", "Potential Impact"):
+            if not isinstance(threat.get(key), str):
+                raise ValueError(f"threat_model[{index}].{key} must be a string")
+    return ThreatModelOutput(
+        threat_model=[normalize_threat_mitre(threat) for threat in threats],
+        improvement_suggestions=suggestions,
+    )
+
+
 def _clean_json_content(content: str) -> str:
-    if "```json" in content:
-        content = re.sub(r"```json\s*", "", content)
-        content = re.sub(r"```\s*$", "", content)
-    elif "```" in content:
-        content = re.sub(r"```\s*", "", content)
-    content = content.replace(",\n  ]", "\n  ]").replace(",\n]", "\n]")
-    content = re.sub(r"//.*?\n", "\n", content)
-    return content.strip()
+    """Recover common JSON wrappers without rewriting quoted source text.
+
+    Valid JSON is returned unchanged. Only a complete outer Markdown fence
+    is unwrapped; comment and trailing-comma recovery operates outside JSON
+    strings, preserving URLs, escaped quotes and code examples verbatim.
+    """
+    content = content.strip()
+    try:
+        json.loads(content)
+        return content
+    except json.JSONDecodeError:
+        pass
+    fence = re.fullmatch(r"```(?:json)?[ \t]*\r?\n(.*?)\r?\n[ \t]*```", content, re.DOTALL | re.IGNORECASE)
+    if fence:
+        content = fence[1].strip()
+
+    # Strip line comments, retaining their newline so adjacent JSON tokens
+    # cannot accidentally be concatenated into a different valid value.
+    cleaned: list[str] = []
+    in_string = False
+    escaped = False
+    index = 0
+    while index < len(content):
+        char = content[index]
+        if not in_string and content.startswith("//", index):
+            newline = content.find("\n", index)
+            index = len(content) if newline < 0 else newline
+            continue
+        cleaned.append(char)
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        index += 1
+
+    content = "".join(cleaned)
+    cleaned = []
+    in_string = False
+    escaped = False
+    for index, char in enumerate(content):
+        if not in_string and char == ",":
+            next_index = index + 1
+            while next_index < len(content) and content[next_index].isspace():
+                next_index += 1
+            if next_index < len(content) and content[next_index] in "]}":
+                continue
+        cleaned.append(char)
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+    return "".join(cleaned).strip()

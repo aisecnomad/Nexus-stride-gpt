@@ -406,7 +406,7 @@ def render_guided_description_builder(*, wrap_in_expander=False):
 # Function to get available models from LM Studio Server
 def get_lm_studio_models(endpoint, api_key="not-needed"):
     try:
-        client = OpenAI(base_url=f"{endpoint}/v1", api_key=api_key)
+        client = OpenAI(base_url=f"{endpoint}/v1", api_key=api_key or "not-needed")
         models = client.models.list()
         return [model.id for model in models.data]
     except requests.exceptions.ConnectionError:
@@ -983,11 +983,11 @@ with st.sidebar:
         lm_studio_api_key = st.text_input(
             "Enter your LM Studio API key (optional):",
             value=st.session_state.get("lm_studio_api_key", ""),
+            key="credential_lm_studio_api_key",
             type="password",
             help="Optional API key for LM Studio Server authentication. Leave empty if your server doesn't require authentication.",
         )
-        if lm_studio_api_key:
-            st.session_state["lm_studio_api_key"] = lm_studio_api_key
+        st.session_state["lm_studio_api_key"] = lm_studio_api_key
 
         if lm_studio_endpoint:
             if not lm_studio_endpoint.startswith(("http://", "https://")):

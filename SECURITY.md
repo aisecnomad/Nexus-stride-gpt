@@ -6,7 +6,7 @@ We release security updates for the following versions:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| latest (master branch)  | :white_check_mark: |
+| latest (main branch)  | :white_check_mark: |
 
 Always use the latest version of STRIDE GPT for the best security.
 
@@ -130,6 +130,16 @@ Security scan results are available in multiple locations:
 - **Push-based Scans**: Automatic scanning on every push to `main`, `master`, and `develop`
 - **Pull Request Scanning**: Python, secret, CodeQL, and dependency checks run for PRs targeting these branches. Container builds and scans run on pushes and manual runs.
 - **Merge protection**: Repository administrators should require `Lint (ruff)`, the three Python test matrix checks, and `Security Scan Summary` in their branch rules. The summary fails for failed or cancelled scans; workflow definitions alone do not configure branch protection.
+
+The reviewed protection configuration is in [`.github/branch-protection-main.json`](.github/branch-protection-main.json). After the updated checks have run on a PR, a repository administrator can apply it with an authenticated GitHub CLI:
+
+```bash
+gh api --method PUT repos/aisecnomad/Nexus-stride-gpt/branches/main/protection \
+  --input .github/branch-protection-main.json
+gh api repos/aisecnomad/Nexus-stride-gpt/branches/main/protection
+```
+
+This requires one approving review, current passing checks, and resolved conversations; it also applies to administrators and blocks force pushes and branch deletion. Committing this file does not activate protection. The command requires repository administration permission, which the connected GitHub App does not provide.
 
 ### Addressing Security Findings
 
