@@ -93,7 +93,7 @@ graph LR
 ```
 
 ### Key Limitation
-**Neither path currently ships a built-in mechanism for injecting organizational context.** The CLI lets you add a reference card without touching shipped code; the Streamlit UI requires forking and modifying prompt-builder modules.
+**Neither path ships a general mechanism for injecting organizational context.** The CLI lets you add a reference card without touching shipped code; the Streamlit UI requires forking and modifying prompt-builder modules. The exception is security controls: the [control catalogue](controls-and-compliance.md) feeds both paths, so organizational controls added there (Approach 4) reach CLI and web UI threat models alike, with their framework mappings.
 
 ---
 
@@ -106,6 +106,7 @@ graph TD
     Start -->|CLI users<br/>recommended| A1[Approach 1:<br/>Custom reference card]
     Start -->|Streamlit users| A2[Approach 2:<br/>Fork & modify prompts]
     Start -->|Trying it out| A3[Approach 3:<br/>Inline context]
+    Start -->|Org controls,<br/>both paths| A4[Approach 4:<br/>Extend the control catalogue]
 
     A1 --> B1[Drop a card into<br/>stride_gpt/core/prompts/<br/>threat_model/]
     A2 --> B2[Modify apps/web/<br/>prompt-builder files]
@@ -114,6 +115,8 @@ graph TD
     B1 --> C1[✅ No fork needed<br/>✅ On-demand loading<br/>✅ Survives upstream]
     B2 --> C2[✅ Consistent<br/>❌ Maintain fork<br/>❌ Conflicts on merge]
     B3 --> C3[✅ No code changes<br/>❌ Manual work<br/>❌ Inconsistent]
+    A4 --> B4[Add controls and mappings to<br/>stride_gpt/core/controls/catalog.toml]
+    B4 --> C4[✅ CLI and Streamlit<br/>✅ Mapped to frameworks<br/>❌ Maintain fork]
 
     style A1 fill:#10B981,color:#fff
     style C1 fill:#10B981,color:#fff
@@ -155,6 +158,38 @@ Organizational Context:
 
 **Pros:** No code changes, works immediately on either path.
 **Cons:** Manual work for each threat model, easy to forget controls, inconsistent across analysts.
+
+### Approach 4: Extend the control catalogue (CLI and Streamlit)
+
+STRIDE-GPT tags every threat with control IDs from a packaged catalogue and maps them to AIUC-1, ISO/IEC 42001, the EU AI Act and ISO/IEC 27001. Add your organization's own controls, in a domain of your own (for example `ORG-01` *Okta SSO for all user authentication*), to `stride_gpt/core/controls/catalog.toml`, then regenerate the cards:
+
+```toml
+[domains.ORG]
+title = "MyOrg Standards"
+card = "security_controls"   # or a card of your own: add a [cards.org_controls] table
+summary = "Controls mandated by the MyOrg security standard."
+
+[[controls]]
+id = "ORG-01"
+domain = "ORG"
+name = "Okta SSO for all user authentication"
+objective = "Authenticate every user through Okta with phishing-resistant MFA; no application-local accounts."
+guidance = ["Register the app in Okta; enforce the FIDO2 policy; disable local login."]
+stride = ["S"]
+references = ["MyOrg Security Standard 4.2"]
+[controls.mappings]
+iso_27001 = ["A.5.16", "A.8.5"]
+```
+
+```bash
+python scripts/build_control_catalog.py   # regenerate cards and docs
+uv run pytest tests/test_controls.py      # integrity + drift checks
+```
+
+You can also add your internal control framework as a new `[frameworks.*]` registry, so reports map threats to your own control IDs alongside the public frameworks. See [Customising the catalogue](controls-and-compliance.md#customising-the-catalogue).
+
+**Pros:** Works for the CLI and the Streamlit UI; threats cite your controls by ID; framework mappings and CSV exports come for free; the loader and tests reject broken references.
+**Cons:** Lives in a fork (keep your additions in their own domain to make upstream merges painless); covers controls, not other organizational context such as approved technology stacks.
 
 ---
 

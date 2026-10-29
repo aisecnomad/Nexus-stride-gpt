@@ -3,15 +3,17 @@
 Used by both the agentic report renderer (:mod:`stride_gpt.agent.report`) and
 the legacy single-shot renderer (:mod:`stride_gpt.core.threat_model`). Each
 threat object can optionally carry `OWASP_LLM`, `OWASP_ASI`,
-`INSIDER_CATEGORY`, `MITRE_ATTACK`, and `evidence` fields — these helpers
-detect which optional columns are populated and emit the right header/row
-shape.
+`INSIDER_CATEGORY`, `MITRE_ATTACK`, `CONTROLS`, and `evidence` fields — these
+helpers detect which optional columns are populated and emit the right
+header/row shape.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 from typing import Any, NamedTuple
+
+from stride_gpt.core.controls import compliance_summary, load_catalog, normalize_control_ids
 
 
 class ExtraColumns(NamedTuple):
@@ -27,6 +29,7 @@ class ExtraColumns(NamedTuple):
     show_insider: bool
     show_mitre: bool
     show_evidence: bool
+    show_controls: bool = False
 
 
 # Why a subsystem stopped, phrased for a report reader. Keyed by
@@ -90,6 +93,8 @@ def detect_extra_columns(
         # int, or the string shape before it was handled).
         show_mitre=any(normalize_mitre_techniques(t.get("MITRE_ATTACK")) for t in threats),
         show_evidence=any(evidence_items(t) for t in threats),
+        # Same reasoning as show_mitre: only IDs the catalogue knows render.
+        show_controls=any(normalize_control_ids(t.get("CONTROLS")) for t in threats),
     )
 
 
@@ -99,6 +104,7 @@ def threat_table_header(
     show_insider: bool,
     show_mitre: bool,
     show_evidence: bool = False,
+    show_controls: bool = False,
     *,
     cross_cutting: bool = False,
 ) -> tuple[str, str]:
@@ -117,6 +123,8 @@ def threat_table_header(
         cols.append("Insider Category")
     if show_mitre:
         cols.append("MITRE ATT&CK")
+    if show_controls:
+        cols.append("Controls")
     if show_evidence:
         cols.append("Evidence")
     if cross_cutting:
@@ -144,6 +152,7 @@ def threat_table_row(
     show_insider: bool,
     show_mitre: bool,
     show_evidence: bool = False,
+    show_controls: bool = False,
     *,
     cross_cutting: bool = False,
 ) -> str:
@@ -166,6 +175,8 @@ def threat_table_row(
         cells.append(_escape_md_cell(threat.get("INSIDER_CATEGORY") or ""))
     if show_mitre:
         cells.append(format_mitre_cell(threat.get("MITRE_ATTACK")))
+    if show_controls:
+        cells.append(", ".join(normalize_control_ids(threat.get("CONTROLS"))))
     if show_evidence:
         cells.append(_escape_md_cell(format_evidence_cell(threat)))
     if cross_cutting:
@@ -231,6 +242,76 @@ def systemic_observation_lines(
         )
         lines.append(f"  - Summarises: {rendered}")
     return lines
+
+
+COMPLIANCE_NOTE = (
+    "The model chose each threat's controls from the STRIDE-GPT control catalogue; "
+    "the framework references are looked up from that catalogue, not generated. They "
+    "show which requirements the identified threats bear on. They are not an "
+    "assessment of conformity."
+)
+
+
+def compliance_section_lines(threats: Iterable[dict[str, Any]]) -> list[str]:
+    """The "Controls & Compliance Mapping" markdown section.
+
+    Empty when no threat carries a known control, so reports from runs that
+    never loaded a controls card render exactly as before. Markdown and the
+    single-shot renderer share this so the two can't drift.
+    """
+    summary = compliance_summary(threats)
+    if summary is None:
+        return []
+    catalog = load_catalog()
+    lines = [
+        "## Controls & Compliance Mapping",
+        "",
+        f"> {COMPLIANCE_NOTE} Catalogue version {summary.catalog_version}.",
+        "",
+        "### Recommended controls",
+        "",
+        "| Control | Name | Domain | Threats |",
+        "|---------|------|--------|---------|",
+    ]
+    for use in summary.controls:
+        domain = catalog.domain(use.control.domain)
+        lines.append(
+            f"| {use.control.id} | {_escape_md_cell(use.control.name)} | "
+            f"{_escape_md_cell(domain.title if domain else use.control.domain)} | "
+            f"{use.threat_count} |"
+        )
+    for coverage in summary.frameworks:
+        framework = coverage.framework
+        lines += ["", f"### {framework.name}", "", f"*{framework.full_name}*", ""]
+        if not coverage.refs:
+            lines.append(f"No {framework.name} references for the recommended controls.")
+            continue
+        lines += [
+            "| Reference | Requirement | Controls | Threats |",
+            "|-----------|-------------|----------|---------|",
+        ]
+        lines.extend(
+            f"| {_escape_md_cell(ref.ref)} | {_escape_md_cell(ref.title)} | "
+            f"{', '.join(ref.control_ids)} | {ref.threat_count} |"
+            for ref in coverage.refs
+        )
+    omitted = summary.omitted_frameworks
+    if omitted:
+        lines += [
+            "",
+            f"_{join_names(f.name for f in omitted)} references are omitted because no "
+            "threat in this report concerns an AI system._",
+        ]
+    lines.append("")
+    return lines
+
+
+def join_names(names: Iterable[str]) -> str:
+    """``A``, ``A and B``, ``A, B and C`` — for prose, not tables."""
+    items = list(names)
+    if len(items) <= 1:
+        return "".join(items)
+    return ", ".join(items[:-1]) + " and " + items[-1]
 
 
 def evidence_items(threat: Any) -> list[dict[str, Any]]:

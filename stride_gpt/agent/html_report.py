@@ -14,10 +14,19 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from stride_gpt.core.controls import (
+    Catalog,
+    ComplianceSummary,
+    compliance_summary,
+    load_catalog,
+    normalize_control_ids,
+)
 from stride_gpt.core.report_utils import (
+    COMPLIANCE_NOTE,
     SYSTEMIC_OBSERVATIONS_NOTE,
     evidence_items,
     evidence_location,
+    join_names,
     mitre_url,
     normalize_mitre_techniques,
     outcome_note,
@@ -52,6 +61,15 @@ _MITRE_PILL_BASE = (
     "inline-flex items-center rounded-full ring-1 ring-inset ring-sky-300 "
     "bg-sky-50 px-2.5 py-0.5 text-xs font-mono text-sky-800 hover:bg-sky-100"
 )
+# Control pills get their own emerald tint: they answer "what fixes this",
+# a different question from the MITRE / OWASP pills' "what is this".
+_CONTROL_PILL_BASE = (
+    "inline-flex items-center rounded-full ring-1 ring-inset ring-emerald-300 "
+    "bg-emerald-50 px-2.5 py-0.5 text-xs font-mono text-emerald-800"
+)
+_TABLE = "min-w-full text-sm text-left"
+_TH = "px-3 py-2 text-[11px] font-mono uppercase tracking-wider text-slate-500"
+_TD = "px-3 py-2 align-top text-slate-800"
 # Small uppercase captions inside cards — Scenario, Potential impact, etc.
 # Mono ties them to the CLI aesthetic without leaning hard on a "terminal" theme.
 _CAPTION = "text-[11px] font-mono uppercase tracking-wider text-slate-500"
@@ -132,6 +150,11 @@ def render_html_from_json(data: dict[str, Any]) -> str:
 
     if systemic:
         parts.append(_render_systemic_observations(systemic, subsystems))
+
+    all_threats = [t for s in subsystems for t in s.get("threats") or []] + list(cross_cutting)
+    summary = compliance_summary(all_threats)
+    if summary is not None:
+        parts.append(_render_compliance(summary))
 
     parts.append(_render_footer(metadata))
 
@@ -463,6 +486,7 @@ def _render_threat_card(threat: dict[str, Any], *, cross_cutting: bool) -> str:
             f'<span class="{_PILL_BASE}">Insider: {html.escape(str(insider))}</span>'
         )
     badges.extend(_render_mitre_pills(mitre))
+    badges.extend(_render_control_pills(threat.get("CONTROLS")))
 
     rows: list[str] = []
     if scenario:
@@ -518,6 +542,120 @@ def _render_mitre_pills(value: Any) -> list[str]:
                 f'{html.escape(tid)}</span>'
             )
     return pills
+
+
+def _render_control_pills(value: Any) -> list[str]:
+    """Catalogue controls as pills, the control's name in the tooltip.
+
+    Only IDs the catalogue knows render, through the same normaliser the
+    markdown and SARIF renderers use. Not links: the report is a standalone
+    file and the catalogue docs may not live where a link would point.
+    """
+    catalog = load_catalog()
+    pills: list[str] = []
+    for cid in normalize_control_ids(value):
+        control = catalog.control(cid)
+        title = f"{cid} {control.name}" if control else cid
+        pills.append(
+            f'<span class="{_CONTROL_PILL_BASE}" title="{html.escape(title)}">'
+            f"{html.escape(cid)}</span>"
+        )
+    return pills
+
+
+def _render_compliance(summary: ComplianceSummary) -> str:
+    """Recommended controls and the framework references they bear on.
+
+    Every value here comes from the packaged catalogue, keyed by IDs the
+    renderer has already validated; it's escaped anyway, like everything else
+    on the page.
+    """
+    catalog = load_catalog()
+    control_rows = "\n".join(
+        f"""              <tr class="border-t border-slate-100">
+                <td class="{_TD}"><span class="{_CONTROL_PILL_BASE}">{html.escape(use.control.id)}</span></td>
+                <td class="{_TD}">{html.escape(use.control.name)}</td>
+                <td class="{_TD} text-slate-600">{html.escape(_domain_title(catalog, use.control.domain))}</td>
+                <td class="{_TD} font-mono">{use.threat_count}</td>
+              </tr>"""
+        for use in summary.controls
+    )
+    tables = [
+        _compliance_table(
+            "Recommended controls",
+            ("Control", "Name", "Domain", "Threats"),
+            control_rows,
+        )
+    ]
+    for coverage in summary.frameworks:
+        framework = coverage.framework
+        if not coverage.refs:
+            tables.append(
+                f"""        <div class="space-y-2">
+          <h3 class="text-base font-semibold text-slate-900">{html.escape(framework.name)}</h3>
+          <p class="text-sm italic text-slate-500">No {html.escape(framework.name)} references for the recommended controls.</p>
+        </div>"""
+            )
+            continue
+        rows = "\n".join(
+            f"""              <tr class="border-t border-slate-100">
+                <td class="{_TD} font-mono whitespace-nowrap">{html.escape(ref.ref)}</td>
+                <td class="{_TD}">{html.escape(ref.title)}</td>
+                <td class="{_TD}"><div class="flex flex-wrap gap-1">{"".join(f'<span class="{_CONTROL_PILL_BASE}">{html.escape(cid)}</span>' for cid in ref.control_ids)}</div></td>
+                <td class="{_TD} font-mono">{ref.threat_count}</td>
+              </tr>"""
+            for ref in coverage.refs
+        )
+        tables.append(
+            _compliance_table(
+                framework.name,
+                ("Reference", "Requirement", "Controls", "Threats"),
+                rows,
+                subtitle=framework.full_name,
+            )
+        )
+    omitted = summary.omitted_frameworks
+    if omitted:
+        names = join_names(f.name for f in omitted)
+        tables.append(
+            f'        <p class="text-sm italic text-slate-500">{html.escape(names)} references '
+            "are omitted because no threat in this report concerns an AI system.</p>"
+        )
+    body = "\n".join(tables)
+    return f"""      <section id="controls-compliance" class="space-y-5">
+        <header class="space-y-1">
+          <h2 class="text-xl font-semibold tracking-tight text-slate-900">Controls &amp; compliance</h2>
+          <p class="text-sm text-slate-600">{html.escape(COMPLIANCE_NOTE)} Catalogue version {html.escape(summary.catalog_version)}.</p>
+        </header>
+{body}
+      </section>"""
+
+
+def _compliance_table(
+    title: str, headers: tuple[str, ...], rows: str, *, subtitle: str = ""
+) -> str:
+    head = "".join(f'<th class="{_TH}">{html.escape(h)}</th>' for h in headers)
+    sub = (
+        f'\n          <p class="text-xs text-slate-500">{html.escape(subtitle)}</p>'
+        if subtitle
+        else ""
+    )
+    return f"""        <div class="space-y-2">
+          <h3 class="text-base font-semibold text-slate-900">{html.escape(title)}</h3>{sub}
+          <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+            <table class="{_TABLE}">
+              <thead><tr>{head}</tr></thead>
+              <tbody>
+{rows}
+              </tbody>
+            </table>
+          </div>
+        </div>"""
+
+
+def _domain_title(catalog: Catalog, key: str) -> str:
+    domain = catalog.domain(key)
+    return domain.title if domain else key
 
 
 def _render_evidence(threat: dict[str, Any]) -> str:

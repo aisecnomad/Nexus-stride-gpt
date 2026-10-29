@@ -29,6 +29,10 @@ stride_gpt/                 # CLI package + shared library
 └── core/                   # shared between CLI and web
     ├── llm.py              # unified call_llm / call_llm_with_tools via litellm
     ├── schemas.py          # LLMConfig, AnalysisPlan, AnalysisReport, etc.
+    ├── controls/           # control catalogue + deterministic framework mapping
+    │   ├── catalog.toml    # single source of truth: controls, domains, framework registries
+    │   ├── __init__.py     # load_catalog(), split/normalize_control_ids(), compliance_summary()
+    │   └── render.py       # renders the *_controls cards and docs/ pages from the catalogue
     ├── prompts/
     │   ├── builder.py      # legacy single-shot prompt builder (web UI uses this)
     │   ├── variants.py     # base_system_prompt(), list_references(), load_reference(), coerce_app_type()
@@ -39,7 +43,9 @@ stride_gpt/                 # CLI package + shared library
     │       ├── agentic.md
     │       ├── insider_threat.md
     │       ├── mitre_enterprise.md
-    │       └── mitre_atlas.md
+    │       ├── mitre_atlas.md
+    │       ├── security_controls.md  # generated from controls/catalog.toml
+    │       └── ai_controls.md        # generated from controls/catalog.toml
     └── ...                 # attack_tree, dread, mitigations, test_cases, threat_model
 
 apps/web/                   # Streamlit UI (separate product)
@@ -68,6 +74,10 @@ Current card catalogue (in `core/prompts/threat_model/`):
 - `insider_threat.md` — AI Insider Threat framework (distilled from <https://ai-insider-threat.matt-adams.co.uk>). Agent-as-insider lens; complementary to the OWASP cards rather than alternative. Loaded for high-autonomy agentic subsystems.
 - `mitre_enterprise.md` — MITRE ATT&CK Enterprise (v17.1) technique catalogue. Annotates threats with standardized adversary technique IDs for traditional-infrastructure attacks; constrains the agent to catalogued IDs/names to avoid hallucination. Regenerated from upstream STIX via `scripts/refresh_mitre_cards.py`.
 - `mitre_atlas.md` — MITRE ATLAS (2026.05) technique catalogue. Same as above but for ML/LLM-specific adversary techniques. Regenerated from upstream YAML via `scripts/refresh_mitre_cards.py`.
+- `security_controls.md` — Security control catalogue: identity and access, data protection and cryptography, network, logging and monitoring, application security. Adds `CONTROLS` (catalogue IDs such as `IAM-05`). Generated from `core/controls/catalog.toml` by `scripts/build_control_catalog.py`.
+- `ai_controls.md` — AI, agentic and AI-governance controls. Loaded in addition to `security_controls` for LLM/agent subsystems; adds IDs to the same `CONTROLS` field. Generated the same way.
+
+The two control cards carry control IDs only. Framework references (AIUC-1, ISO/IEC 42001, EU AI Act, ISO/IEC 27001) are looked up from the catalogue by `core/controls:compliance_summary` at render time, so the model never writes a clause number. See `docs/controls-and-compliance.md`.
 
 ### How it's wired together
 
@@ -163,6 +173,7 @@ When adding a new provider or model, the kwarg shape almost always needs a new b
 - **Prompt changes that affect both the agent and the legacy single-shot path** → edit the markdown reference cards. Section helpers in `core/prompts/builder.py` already load from them.
 - **A new agent capability** → typically a new tool in `agent/tools.py` (add to `AGENT_TOOLS` list + `_TOOL_DISPATCH` dict + the test in `test_tools.py:TestToolDefinitions:test_tool_names_match_dispatch`). A tool that records loop state rather than reading the sandbox belongs in `REPORTING_TOOLS` instead, handled in `agent/loop.py` — `report_threat` and `finish` are the worked example.
 - **A new output format** → add a renderer in `agent/report.py`, wire it into `cli.py:analyze` via the `OutputFormat` enum, add a from-JSON variant if it should work for saved reports.
+- **A control, domain or framework mapping** → edit `core/controls/catalog.toml` only, then run `python scripts/build_control_catalog.py`. It regenerates `security_controls.md`, `ai_controls.md`, `docs/controls-catalog.md` and `docs/framework-crosswalks.md`; `tests/test_controls.py` fails if any of them drifts from the catalogue. The loader rejects a mapping to a reference missing from the framework's registry. A new card name in `[cards.*]` becomes a new reference card, discovered like any other.
 - **A new threat-model "lens"** (e.g. cloud-specific, IoT) → drop a new markdown card under `core/prompts/threat_model/` with a YAML frontmatter block (see existing cards for shape: `name`, `title`, `when_to_load`, `adds_fields`, `stride_letters`, `source`, `version`). Discovery picks it up automatically via `list_references` — no edits to `variants.py` or `tools.py` required. The inline card list in `base.md` / `quick_base.md` is a reliability hint for smaller models; if the new card is something every applicable codebase should reach for, add a line for it there (and to the "Current card catalogue" list under "Progressive disclosure pattern" above). If it's niche, leave the prompt alone and let `list_references` surface it. If the card declares a new field in `adds_fields`, add it to the `report_threat` schema in `agent/tools.py` (the agent only records what the tool accepts) and extend `detect_extra_columns` / `threat_table_header` / `threat_table_row` in `core/report_utils.py` so the field renders. The planner classifier only needs a new app-type value if the card should auto-trigger; otherwise the agent decides per subsystem based on each card's `when_to_load`. See the `insider_threat` card for a worked example.
 
 ## Testing
@@ -184,4 +195,5 @@ When adding a new provider or model, the kwarg shape almost always needs a new b
 - **Don't bypass `core/llm.py`.** It exists to make provider quirks one team's problem.
 - **Don't add the agentic engine to the web UI.** It was explicitly removed — see the project memory. The web UI is for hosted deployments that can't run filesystem-touching code.
 - **Don't drift the agent's reference cards from the legacy `create_threat_model_prompt` path.** Both consume the same markdown files via `load_reference`; keep it that way.
+- **Don't let the model write framework references.** Threats carry catalogue control IDs (`CONTROLS`); AIUC-1 / ISO / EU AI Act references are derived from the catalogue. Never add a card or prompt that asks the model for clause numbers, and never hand-edit the generated control cards or docs.
 - **Don't make the planner deterministic via grep heuristics.** The planner LLM is trusted to classify app type — the classification feeds metadata and the planner's own decisions, but per-subsystem card selection is the agent's own call, made from the base prompt and (optionally) `list_references`.

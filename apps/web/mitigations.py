@@ -1,7 +1,12 @@
+import re
+
 import streamlit as st
 
 from stride_gpt.core.mitigations import generate_mitigations
 from stride_gpt.core.schemas import LLMConfig
+
+# A "Controls" column in the threat table's header row.
+_CONTROLS_COLUMN = re.compile(r"^\|.*\| Controls \|", re.MULTILINE)
 
 
 # Function to create a prompt to generate mitigating controls
@@ -172,6 +177,11 @@ Consider controls that address attack chains spanning multiple components:
 - Apply blast radius limiting to contain breaches to single components
 - Implement graceful degradation when components fail
 - Use zero-trust principles between all architectural components
+
+"""
+
+    if _CONTROLS_COLUMN.search(threats):
+        prompt += """Some threats list control IDs from the STRIDE-GPT control catalogue in their Controls column (for example IAM-05 or AGT-07). For those threats, base the mitigation on the listed controls and cite their IDs, so the mitigations line up with the compliance mapping.
 
 """
 

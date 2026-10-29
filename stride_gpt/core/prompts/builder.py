@@ -155,6 +155,21 @@ def create_insider_threat_prompt_section() -> str:
     return "\n" + load_reference("insider_threat")
 
 
+def create_controls_prompt_section(*, include_ai: bool) -> str:
+    """Control-catalogue section of the threat model prompt.
+
+    The packaged `security_controls` card, plus `ai_controls` for GenAI and
+    agentic applications — the same cards the agent loads, so a web-UI threat
+    model and a CLI one tag threats from the same catalogue.
+    """
+    from stride_gpt.core.prompts.variants import load_reference
+
+    section = "\n" + load_reference("security_controls")
+    if include_ai:
+        section += "\n" + load_reference("ai_controls")
+    return section
+
+
 def dfd_to_prompt_section(dfd_mermaid: str) -> str:
     """Render a confirmed DFD into a prompt section.
 
@@ -250,12 +265,16 @@ def create_threat_model_prompt(
     sensitive_data: str,
     app_input: str,
     confirmed_dfd: str | None = None,
+    include_controls: bool = False,
 ) -> str:
     """Build the threat-model prompt for a given application profile.
 
     If `confirmed_dfd` is supplied (Mermaid source the user has confirmed
     in the DFD tab), it's spliced in as an authoritative system model so
     the LLM threats reference the same components and trust boundaries.
+
+    `include_controls` adds the control-catalogue cards and asks for a
+    `CONTROLS` array on each threat, which drives the compliance mapping.
     """
     is_genai = app_type == "Generative AI application"
     is_agentic = app_type == "Agentic AI application"
@@ -292,6 +311,11 @@ Pay special attention to the README content as it often provides valuable contex
 """
     else:
         prompt += """When providing the threat model, use a JSON formatted response with the keys "threat_model" and "improvement_suggestions". Under "threat_model", include an array of objects with the keys "Threat Type", "Scenario", and "Potential Impact".
+
+"""
+
+    if include_controls:
+        prompt += """Each object under "threat_model" must also include "CONTROLS": an array of 1-4 control IDs from the control catalogue below that would most directly mitigate the threat, most important first. Use only IDs listed in the catalogue.
 
 """
 
@@ -337,6 +361,9 @@ SENSITIVE DATA: {sensitive_data}
     if is_agentic:
         prompt += create_agentic_stride_prompt_section()
         prompt += create_insider_threat_prompt_section()
+
+    if include_controls:
+        prompt += create_controls_prompt_section(include_ai=include_llm_risks)
 
     if confirmed_dfd:
         prompt += dfd_to_prompt_section(confirmed_dfd)

@@ -16,6 +16,7 @@ import json
 from pathlib import Path
 
 from stride_gpt.agent.tools import AGENT_TOOLS, execute_tool
+from stride_gpt.core.controls import keep_known_controls
 from stride_gpt.core.json_extract import extract_json_object
 from stride_gpt.core.llm import call_llm, call_llm_with_tools
 from stride_gpt.core.prompts import quick_base_prompt
@@ -161,8 +162,14 @@ def _parse_threat_model(content: str) -> ThreatModelOutput | None:
     data = extract_json_object(content)
     if data is None:
         return None
+    threats = data.get("threat_model", [])
+    if isinstance(threats, list):
+        # The saved report is what downstream tools import; an invented
+        # control ID shouldn't reach it.
+        for threat in threats:
+            keep_known_controls(threat)
     return ThreatModelOutput(
-        threat_model=data.get("threat_model", []),
+        threat_model=threats,
         improvement_suggestions=data.get("improvement_suggestions", []),
     )
 

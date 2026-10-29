@@ -5,6 +5,11 @@ from stride_gpt.core.prompts import (
     create_llm_stride_prompt_section,
     create_threat_model_prompt,
 )
+from stride_gpt.core.report_utils import (
+    detect_extra_columns,
+    threat_table_header,
+    threat_table_row,
+)
 from stride_gpt.core.schemas import LLMConfig
 from stride_gpt.core.threat_model import analyze_image, generate_threat_model
 
@@ -39,48 +44,18 @@ def _md_cell(value) -> str:
 
 # Function to convert JSON to Markdown for display.
 def json_to_markdown(threat_model, improvement_suggestions):
-    markdown_output = "## Threat Model\n\n"
+    """Render the threat table through the same shared helpers as the CLI.
 
-    # Check which OWASP fields are present
-    has_owasp_llm = any(threat.get("OWASP_LLM") for threat in threat_model)
-    has_owasp_asi = any(threat.get("OWASP_ASI") for threat in threat_model)
-
-    if has_owasp_llm and has_owasp_asi:
-        # Full table with both OWASP columns (agentic applications)
-        markdown_output += "| Threat Type | Scenario | Potential Impact | OWASP LLM | OWASP ASI |\n"
-        markdown_output += "|-------------|----------|------------------|-----------|------------|\n"
-        for threat in threat_model:
-            owasp_llm = threat.get("OWASP_LLM") or "-"
-            owasp_asi = threat.get("OWASP_ASI") or "-"
-            markdown_output += (
-                f"| {_md_cell(threat['Threat Type'])} | {_md_cell(threat['Scenario'])} | {_md_cell(threat['Potential Impact'])} | {_md_cell(owasp_llm)} | {_md_cell(owasp_asi)} |\n"
-            )
-    elif has_owasp_llm:
-        # Table with OWASP LLM column only (GenAI applications)
-        markdown_output += "| Threat Type | Scenario | Potential Impact | OWASP LLM |\n"
-        markdown_output += "|-------------|----------|------------------|------------|\n"
-        for threat in threat_model:
-            owasp_llm = threat.get("OWASP_LLM") or "-"
-            markdown_output += (
-                f"| {_md_cell(threat['Threat Type'])} | {_md_cell(threat['Scenario'])} | {_md_cell(threat['Potential Impact'])} | {_md_cell(owasp_llm)} |\n"
-            )
-    elif has_owasp_asi:
-        # Table with OWASP ASI column only (edge case)
-        markdown_output += "| Threat Type | Scenario | Potential Impact | OWASP ASI |\n"
-        markdown_output += "|-------------|----------|------------------|------------|\n"
-        for threat in threat_model:
-            owasp_asi = threat.get("OWASP_ASI") or "-"
-            markdown_output += (
-                f"| {_md_cell(threat['Threat Type'])} | {_md_cell(threat['Scenario'])} | {_md_cell(threat['Potential Impact'])} | {_md_cell(owasp_asi)} |\n"
-            )
-    else:
-        # Standard table without OWASP columns
-        markdown_output += "| Threat Type | Scenario | Potential Impact |\n"
-        markdown_output += "|-------------|----------|------------------|\n"
-        for threat in threat_model:
-            markdown_output += (
-                f"| {_md_cell(threat['Threat Type'])} | {_md_cell(threat['Scenario'])} | {_md_cell(threat['Potential Impact'])} |\n"
-            )
+    Optional columns (OWASP LLM / ASI, Insider Category, MITRE ATT&CK,
+    Controls) appear only when a threat carries them, and every cell is
+    escaped. The compliance mapping lives on its own tab rather than here, so
+    this markdown stays a compact input for the mitigations, DREAD and test
+    case prompts that reuse it.
+    """
+    cols = detect_extra_columns(threat_model)
+    header, separator = threat_table_header(*cols)
+    rows = "\n".join(threat_table_row(threat, *cols) for threat in threat_model)
+    markdown_output = f"## Threat Model\n\n{header}\n{separator}\n{rows}\n"
 
     markdown_output += "\n\n## Improvement Suggestions\n\n"
     for suggestion in improvement_suggestions:

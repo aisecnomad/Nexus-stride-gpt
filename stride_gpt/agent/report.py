@@ -10,8 +10,15 @@ from importlib.metadata import version as _package_version
 from pathlib import Path
 from typing import Any
 
+from stride_gpt.core.controls import (
+    compliance_summary,
+    framework_refs,
+    has_ai_scope,
+    normalize_control_ids,
+)
 from stride_gpt.core.report_utils import (
     SYSTEMIC_OBSERVATIONS_NOTE,
+    compliance_section_lines,
     detect_extra_columns,
     evidence_items,
     normalize_mitre_techniques,
@@ -127,6 +134,12 @@ def render_markdown(report: AnalysisReport) -> str:
             lines.extend(systemic_observation_lines(observation, subsystems))
         lines.append("")
 
+    lines.extend(
+        compliance_section_lines(
+            [t for f in report.findings for t in f.threats] + list(report.cross_cutting_threats)
+        )
+    )
+
     # Summary
     total_threats = sum(len(f.threats) for f in report.findings) + len(report.cross_cutting_threats)
     lines.append("## Summary")
@@ -214,7 +227,7 @@ def _subsystem_summary_lines(subsystems: list[dict[str, Any]]) -> list[str]:
 
 def render_json(report: AnalysisReport) -> dict[str, Any]:
     """Render an AnalysisReport as a structured JSON-serializable dict."""
-    return {
+    data: dict[str, Any] = {
         "version": "1.0",
         "generated_at": datetime.now(UTC).isoformat(),
         "target": report.plan.target_path,
@@ -235,6 +248,25 @@ def render_json(report: AnalysisReport) -> dict[str, Any]:
         "systemic_observations": report.systemic_observations,
         "metadata": report.metadata,
     }
+    _attach_compliance(data)
+    return data
+
+
+def _attach_compliance(data: dict[str, Any]) -> None:
+    """Add the derived controls-and-frameworks summary to a report dict.
+
+    For consumers of the JSON (GRC tooling, dashboards). It's a convenience
+    copy: every renderer recomputes it from the threats, so a stale or
+    hand-edited summary in a saved report can't make them disagree.
+    """
+    summary = compliance_summary(_all_threats(data))
+    if summary is not None:
+        data["compliance"] = summary.to_dict()
+
+
+def _all_threats(data: dict[str, Any]) -> list[dict[str, Any]]:
+    threats = [t for sub in data.get("subsystems") or [] for t in sub.get("threats") or []]
+    return threats + list(data.get("cross_cutting_threats") or [])
 
 
 # SARIF message bodies surface in code-scanning UIs as plain text — bound the
@@ -422,6 +454,23 @@ def _sarif_mitre_ids(value: Any) -> list[str]:
     return [tid for tid, _name in normalize_mitre_techniques(value)]
 
 
+def _sarif_control_properties(threat: dict[str, Any], ai_scope: bool) -> dict[str, Any]:
+    """Catalogue controls and their framework references for a result's properties.
+
+    Lets code-scanning consumers filter or route findings by control or by
+    framework requirement (e.g. every result touching EU AI Act Art. 14).
+    Empty when the threat carries no known control.
+    """
+    controls = normalize_control_ids(threat.get("CONTROLS"))
+    if not controls:
+        return {}
+    props: dict[str, Any] = {"controls": controls}
+    refs = framework_refs(controls, ai_scope=ai_scope)
+    if refs:
+        props["frameworks"] = refs
+    return props
+
+
 # ---------------------------------------------------------------------------
 # Report persistence — save, load, list
 # ---------------------------------------------------------------------------
@@ -507,6 +556,7 @@ def save_quick_report(
         "cross_cutting_threats": [],
         "metadata": metadata,
     }
+    _attach_compliance(data)
 
     path = target_dir / filename
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
@@ -696,6 +746,8 @@ def render_markdown_from_json(data: dict[str, Any]) -> str:
             lines.extend(systemic_observation_lines(observation, subsystems))
         lines.append("")
 
+    lines.extend(compliance_section_lines(all_threats))
+
     total = sum(len(s.get("threats", [])) for s in data.get("subsystems", []))
     total += len(cross_cutting)
     metadata = data.get("metadata", {})
@@ -730,6 +782,9 @@ def render_sarif_from_json(data: dict[str, Any]) -> dict[str, Any]:
     rules: list[dict[str, Any]] = []
     results: list[dict[str, Any]] = []
     rule_ids: set[str] = set()
+    # Decided once for the whole report, as the markdown summary does, so a
+    # result never carries framework references the summary leaves out.
+    ai_scope = has_ai_scope(_all_threats(data))
 
     for sub in data.get("subsystems", []):
         files = sub.get("files_analyzed", [])
@@ -765,6 +820,7 @@ def render_sarif_from_json(data: dict[str, Any]) -> dict[str, Any]:
             mitre_ids = _sarif_mitre_ids(threat.get("MITRE_ATTACK"))
             if mitre_ids:
                 result_entry["properties"]["mitre_attack"] = mitre_ids
+            result_entry["properties"].update(_sarif_control_properties(threat, ai_scope))
             locations = _sarif_locations(threat, files)
             if locations:
                 result_entry["locations"] = locations
@@ -803,6 +859,7 @@ def render_sarif_from_json(data: dict[str, Any]) -> dict[str, Any]:
         mitre_ids = _sarif_mitre_ids(threat.get("MITRE_ATTACK"))
         if mitre_ids:
             cross_entry["properties"]["mitre_attack"] = mitre_ids
+        cross_entry["properties"].update(_sarif_control_properties(threat, ai_scope))
         # No files_analyzed to fall back on: a cross-cutting threat is located
         # by its verified evidence or not at all.
         locations = _sarif_locations(threat, [])
