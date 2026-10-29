@@ -23,6 +23,8 @@ from functools import cache, cached_property
 from importlib.resources import files
 from typing import Any
 
+from stride_gpt.core.mitre import normalize_techniques
+
 _PACKAGE = "stride_gpt.core.controls"
 _CATALOG_FILE = "catalog.toml"
 
@@ -470,12 +472,7 @@ def framework_refs(control_ids: Iterable[str], *, ai_scope: bool) -> dict[str, l
 
 
 def _mentions_atlas(value: Any) -> bool:
-    entries = value if isinstance(value, list) else [value]
-    for entry in entries:
-        text = entry.get("id") if isinstance(entry, dict) else entry
-        if isinstance(text, str) and "AML." in text.upper():
-            return True
-    return False
+    return any(technique_id.startswith("AML.") for technique_id, _ in normalize_techniques(value))
 
 
 # ---------------------------------------------------------------------------

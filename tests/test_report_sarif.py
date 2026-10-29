@@ -100,7 +100,7 @@ class TestSarifMitreIds:
 
     def test_skips_malformed_and_empty_entries(self):
         value = [{"id": "T1"}, {"id": ""}, 42, {"no_id": "x"}, "  ", "T2"]
-        assert _sarif_mitre_ids(value) == ["T1", "T2"]
+        assert _sarif_mitre_ids(value) == []
 
 
 # ---------------------------------------------------------------------------

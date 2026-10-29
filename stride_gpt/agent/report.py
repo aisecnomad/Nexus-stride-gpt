@@ -10,12 +10,15 @@ from importlib.metadata import version as _package_version
 from pathlib import Path
 from typing import Any
 
+from stride_gpt.agent.safe_io import atomic_write_text
 from stride_gpt.core.controls import (
     compliance_summary,
     framework_refs,
     has_ai_scope,
     normalize_control_ids,
 )
+from stride_gpt.core.markdown_safety import sanitize_markdown
+from stride_gpt.core.mitre import normalize_threat_mitre
 from stride_gpt.core.report_utils import (
     SYSTEMIC_OBSERVATIONS_NOTE,
     compliance_section_lines,
@@ -171,7 +174,7 @@ def render_markdown(report: AnalysisReport) -> str:
             lines.append(f"- **Model**: {worker_provider}/{worker}")
     lines.append("")
 
-    return "\n".join(lines)
+    return sanitize_markdown("\n".join(lines))
 
 
 def _status_lines(outcome: str, error_class: str | None) -> list[str]:
@@ -228,7 +231,7 @@ def render_json(report: AnalysisReport) -> dict[str, Any]:
         "subsystems": [
             {
                 "name": f.subsystem,
-                "threats": f.threats,
+                "threats": [normalize_threat_mitre(t) for t in f.threats],
                 "improvement_suggestions": f.improvement_suggestions,
                 "files_analyzed": f.files_analyzed,
                 "outcome": f.outcome,
@@ -236,8 +239,8 @@ def render_json(report: AnalysisReport) -> dict[str, Any]:
             }
             for f in report.findings
         ],
-        "cross_cutting_threats": report.cross_cutting_threats,
-        "systemic_observations": report.systemic_observations,
+        "cross_cutting_threats": [normalize_threat_mitre(t) for t in report.cross_cutting_threats],
+        "systemic_observations": [normalize_threat_mitre(t) for t in report.systemic_observations],
         "metadata": report.metadata,
     }
     _attach_compliance(data)
@@ -476,7 +479,6 @@ def save_report(report: AnalysisReport) -> Path:
     from stride_gpt.config import analyze_reports_dir
 
     target_dir = analyze_reports_dir()
-    target_dir.mkdir(parents=True, exist_ok=True)
 
     target_name = Path(report.plan.target_path).name
     name = re.sub(r"[^a-zA-Z0-9_-]", "-", target_name) or "analysis"
@@ -485,7 +487,7 @@ def save_report(report: AnalysisReport) -> Path:
 
     path = target_dir / filename
     rendered = render_json(report)
-    path.write_text(json.dumps(rendered, indent=2) + "\n")
+    atomic_write_text(path, json.dumps(rendered, indent=2) + "\n", create_parents=True)
     _write_html_companion(path, rendered)
     return path
 
@@ -507,7 +509,6 @@ def save_quick_report(
     from stride_gpt.config import quick_reports_dir
 
     target_dir = quick_reports_dir()
-    target_dir.mkdir(parents=True, exist_ok=True)
 
     safe_name = re.sub(r"[^a-zA-Z0-9_-]", "-", name) or "quick-analysis"
     timestamp = datetime.now(UTC).strftime("%Y-%m-%dT%H%M%SZ")
@@ -538,7 +539,7 @@ def save_quick_report(
         "subsystems": [
             {
                 "name": "Application",
-                "threats": output.threat_model,
+                "threats": [normalize_threat_mitre(t) for t in output.threat_model],
                 "improvement_suggestions": output.improvement_suggestions,
                 "files_analyzed": [],
                 "outcome": "completed",
@@ -551,7 +552,7 @@ def save_quick_report(
     _attach_compliance(data)
 
     path = target_dir / filename
-    path.write_text(json.dumps(data, indent=2) + "\n")
+    atomic_write_text(path, json.dumps(data, indent=2) + "\n", create_parents=True)
     _write_html_companion(path, data)
     return path
 
@@ -566,7 +567,7 @@ def _write_html_companion(json_path: Path, data: dict[str, Any]) -> None:
     try:
         from stride_gpt.agent.html_report import render_html_from_json
         html_path = json_path.with_suffix(".html")
-        html_path.write_text(render_html_from_json(data))
+        atomic_write_text(html_path, render_html_from_json(data))
     except Exception as exc:
         import sys
         print(
@@ -765,7 +766,7 @@ def render_markdown_from_json(data: dict[str, Any]) -> str:
             lines.append(f"- **Model**: {worker_provider}/{worker}")
     lines.append("")
 
-    return "\n".join(lines)
+    return sanitize_markdown("\n".join(lines))
 
 
 def render_sarif_from_json(data: dict[str, Any]) -> dict[str, Any]:

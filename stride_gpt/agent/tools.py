@@ -10,23 +10,31 @@ import fnmatch
 import json
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any
+
+import regex
 
 from stride_gpt.core.controls import load_catalog
 from stride_gpt.core.schemas import ToolCallResult
 
 MAX_FILE_SIZE = 50 * 1024  # 50 KB
+# This is an input bound, separate from the numbered output's byte limit.
+# Bound the actual read too: stat alone cannot protect against a growing file.
+MAX_SOURCE_FILE_BYTES = 2 * 1024 * 1024
 MAX_GREP_RESULTS = 20
 MAX_SEARCH_RESULTS = 50
 MAX_DIR_ENTRIES = 200
 
 # Caps for LLM-supplied grep patterns. The agent only needs short, common
 # patterns; anything longer is much more likely to be a ReDoS attempt than a
-# legitimate search. Per-line truncation bounds input so simple polynomial
-# patterns can't explode either.
+# legitimate search. Pattern screening is only a fast rejection heuristic;
+# the regex engine's timeout, not the heuristic, bounds backtracking work.
 MAX_GREP_PATTERN_LEN = 200
 MAX_GREP_LINE_LEN = 1000
+GREP_MATCH_TIMEOUT_SECONDS = 0.05
+GREP_SCAN_TIMEOUT_SECONDS = 2.0
 
 # Heuristic for catastrophic backtracking: a quantified inner group followed
 # by an outer quantifier — e.g. ``(a+)+``, ``(\w*)+``, ``([0-9]+)*``. Catches
@@ -102,6 +110,22 @@ def _should_skip(name: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _read_source_text(path: Path) -> str | None:
+    """Read at most the source-size limit; ``None`` means too large to inspect.
+
+    Both a stat check and a bounded read are necessary: a file can change
+    between them. Decoding and splitting a malicious input must never start
+    by allocating memory proportional to an arbitrarily large file.
+    """
+    if path.stat().st_size > MAX_SOURCE_FILE_BYTES:
+        return None
+    with path.open("rb") as stream:
+        data = stream.read(MAX_SOURCE_FILE_BYTES + 1)
+    if len(data) > MAX_SOURCE_FILE_BYTES:
+        return None
+    return data.decode("utf-8", errors="replace")
+
+
 def read_file(
     root: Path, path: str, start_line: int | None = None, end_line: int | None = None
 ) -> str:
@@ -110,7 +134,8 @@ def read_file(
     The output starts with a header giving the file's total line count, the
     exact range shown and whether the byte cap cut the range short. When it
     did, the next line says which ``start_line`` to request to continue, so the
-    model can page through files of any size. The numbered body is capped at
+    model can page through source files up to ``MAX_SOURCE_FILE_BYTES``. Larger
+    files return an explicit error. The numbered body is capped at
     ``MAX_FILE_SIZE`` bytes and cut at a line boundary so the header's range is
     exact; only a single line longer than the cap is itself cut.
 
@@ -131,9 +156,14 @@ def read_file(
     if start_line is not None and end_line is not None and end_line < start_line:
         return f"Error: end_line ({end_line}) is before start_line ({start_line})"
     try:
-        content = resolved.read_text(errors="replace")
+        content = _read_source_text(resolved)
     except Exception as e:
         return f"Error reading {path}: {e}"
+    if content is None:
+        return (
+            f"Error: file exceeds the {MAX_SOURCE_FILE_BYTES:,}-byte input safety limit: {path}. "
+            "Inspect a smaller source file instead."
+        )
 
     lines = content.splitlines()
     total = len(lines)
@@ -254,14 +284,18 @@ def grep_content(
 ) -> str:
     """Search file contents for a regex pattern. Returns matches with context.
 
-    LLM-supplied patterns can trigger catastrophic backtracking, hanging the
-    agent loop. Patterns longer than ``MAX_GREP_PATTERN_LEN`` or containing a
-    nested-quantifier ReDoS shape are rejected; each line is truncated to
-    ``MAX_GREP_LINE_LEN`` before matching to bound input for polynomial
-    patterns that slip past the heuristic.
+    Every regex match has an engine-enforced timeout, and the scan checks a
+    shared deadline between files and lines. Incomplete scans return an
+    explicit truncation marker, never an apparently complete empty result.
+    Oversized source files are skipped and counted in the result metadata.
+    The cheap pattern/line limits remain useful, but are not the ReDoS boundary.
     """
     resolved = _resolve_safe_path(root, path)
     root_resolved = root.resolve()
+
+    if isinstance(max_results, bool) or not isinstance(max_results, int) or max_results < 1:
+        return "Error: max_results must be a positive integer."
+    max_results = min(max_results, MAX_GREP_RESULTS)
 
     if len(pattern) > MAX_GREP_PATTERN_LEN:
         return (
@@ -275,11 +309,24 @@ def grep_content(
             "Rewrite without quantified groups inside quantified groups."
         )
     try:
-        compiled = re.compile(pattern, re.IGNORECASE)
-    except re.error as e:
+        compiled = regex.compile(pattern, regex.IGNORECASE | regex.VERSION0)
+    except regex.error as e:
         return f"Error: invalid regex: {e}"
 
     results: list[dict[str, Any]] = []
+    deadline = time.monotonic() + GREP_SCAN_TIMEOUT_SECONDS
+    oversized_files = 0
+
+    def incomplete(reason: str, **details: Any) -> str:
+        return json.dumps([
+            *results,
+            {
+                "truncated": True,
+                "reason": reason,
+                "oversized_files_skipped": oversized_files,
+                **details,
+            },
+        ])
 
     if resolved.is_file():
         walk_targets = [(str(resolved.parent), [], [resolved.name])]
@@ -287,9 +334,13 @@ def grep_content(
         walk_targets = os.walk(resolved)
 
     for dirpath, dirnames, filenames in walk_targets:
+        if time.monotonic() >= deadline:
+            return incomplete("scan_timeout", message="Narrow the search path or pattern.")
         if hasattr(dirnames, '__delitem__'):
             dirnames[:] = [d for d in dirnames if not _should_skip(d)]
         for filename in filenames:
+            if time.monotonic() >= deadline:
+                return incomplete("scan_timeout", message="Narrow the search path or pattern.")
             full = Path(dirpath) / filename
             # Skip binary-looking files
             if full.suffix in (".pyc", ".pyo", ".so", ".dll", ".exe", ".bin", ".zip", ".tar", ".gz",
@@ -304,17 +355,31 @@ def grep_content(
             if not _link_target_allowed(root_resolved, full) or not full.is_file():
                 continue
             try:
-                text = full.read_text(errors="replace")
+                text = _read_source_text(full)
             except (OSError, UnicodeDecodeError):
+                continue
+            if text is None:
+                oversized_files += 1
                 continue
             for i, line in enumerate(text.splitlines(), 1):
                 # Truncate to bound the input the regex engine has to walk.
                 search_line = line if len(line) <= MAX_GREP_LINE_LEN else line[:MAX_GREP_LINE_LEN]
-                if compiled.search(search_line):
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return incomplete("scan_timeout", message="Narrow the search path or pattern.")
+                try:
+                    match = compiled.search(
+                        search_line, timeout=min(GREP_MATCH_TIMEOUT_SECONDS, remaining)
+                    )
+                except TimeoutError:
+                    return incomplete("regex_timeout", message="Use a simpler regex pattern.")
+                if match:
                     rel = str(full.relative_to(root_resolved))
                     results.append({"file": rel, "line": i, "content": line.strip()[:200]})
                     if len(results) >= max_results:
-                        return json.dumps([*results, {"truncated": True, "total_limit": max_results}])
+                        return incomplete("result_limit", total_limit=max_results)
+    if oversized_files:
+        return incomplete("file_size_limit", max_file_bytes=MAX_SOURCE_FILE_BYTES)
     return json.dumps(results)
 
 
@@ -331,7 +396,8 @@ AGENT_TOOLS: list[dict[str, Any]] = [
                 "Read the contents of a file. Use this to understand code, configuration, or documentation. "
                 "Returns line-numbered output under a header giving the file's total_lines and the range shown. "
                 "Large files are returned in pages: when the header says truncated: true, call again with the "
-                "start_line it suggests. Pass start_line/end_line to read just part of a file."
+                "start_line it suggests. Pass start_line/end_line to read just part of a file. "
+                f"Files larger than {MAX_SOURCE_FILE_BYTES:,} bytes are refused for memory safety."
             ),
             "parameters": {
                 "type": "object",
@@ -435,9 +501,10 @@ AGENT_TOOLS: list[dict[str, Any]] = [
                 "Search file contents for a regex pattern. Returns matching "
                 "lines with file paths and line numbers. Results are capped "
                 f"at {MAX_GREP_RESULTS}; a final "
-                '{"truncated": true, ...} item means the cap was reached and '
-                "there may be more matches, so narrow the pattern or search a "
-                "subdirectory."
+                '{"truncated": true, ...} item means the search is incomplete '
+                "because of the result limit, timeout, or oversized files. "
+                "Check its reason, simplify the regex or search a smaller subdirectory. "
+                f"Files larger than {MAX_SOURCE_FILE_BYTES:,} bytes are skipped."
             ),
             "parameters": {
                 "type": "object",

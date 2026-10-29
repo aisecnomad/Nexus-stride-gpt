@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -49,6 +51,31 @@ class TestReadFile:
         assert hint == f"[Line 1 was cut at {MAX_FILE_SIZE:,} bytes.]"
         assert "[line 1 cut at" in result
         assert len(result.encode()) < MAX_FILE_SIZE + 300
+
+    def test_rejects_input_above_safety_limit(self, sandbox_dir: Path, monkeypatch):
+        monkeypatch.setattr("stride_gpt.agent.tools.MAX_SOURCE_FILE_BYTES", 64)
+        (sandbox_dir / "oversized.py").write_bytes(b"x" * 65)
+        result = read_file(sandbox_dir, "oversized.py")
+        assert result.startswith("Error:")
+        assert "input safety limit" in result
+
+    def test_growth_after_stat_cannot_bypass_input_limit(self, sandbox_dir: Path, monkeypatch):
+        """A stale size check must not turn the bounded read into read-all."""
+        from types import SimpleNamespace
+
+        from stride_gpt.agent.tools import _read_source_text
+
+        source = sandbox_dir / "growing.txt"
+        source.write_bytes(b"x" * 65)
+        monkeypatch.setattr("stride_gpt.agent.tools.MAX_SOURCE_FILE_BYTES", 64)
+        monkeypatch.setattr(Path, "stat", lambda self: SimpleNamespace(st_size=1))
+        assert _read_source_text(source) is None
+
+    def test_crlf_and_unicode_line_numbers_preserved(self, sandbox_dir: Path):
+        (sandbox_dir / "unicode.py").write_bytes("alpha\r\nβeta\r\ngamma".encode())
+        result = read_file(sandbox_dir, "unicode.py", start_line=2, end_line=2)
+        assert "total_lines: 3 | showing: 2-2" in result
+        assert result.endswith("2\tβeta")
 
     def test_header_and_line_numbers(self, sandbox_dir: Path):
         (sandbox_dir / "ten.py").write_text("".join(f"line {i}\n" for i in range(1, 11)))
@@ -324,6 +351,57 @@ class TestGrepContent:
         result = grep_content(sandbox_dir, "(Flask)+")
         # Valid JSON result (a match list), not an Error string.
         assert isinstance(json.loads(result), list)
+
+    def test_ambiguous_alternation_times_out_without_hanging(self, sandbox_dir: Path):
+        """Exercise the actual regex engine, with an outer kill deadline so
+        removing the match timeout cannot hang the test runner itself."""
+        (sandbox_dir / "adversarial.txt").write_text("a\n" + "a" * 60 + "!\n")
+        script = (
+            "from pathlib import Path\n"
+            "import sys\n"
+            "from stride_gpt.agent.tools import grep_content\n"
+            "print(grep_content(Path(sys.argv[1]), '(a|aa)+$', path='adversarial.txt'))\n"
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", script, str(sandbox_dir)],
+            capture_output=True, text=True, check=True, timeout=5,
+        )
+        result = json.loads(completed.stdout)
+        assert result[0] == {"file": "adversarial.txt", "line": 1, "content": "a"}
+        assert result[-1]["truncated"] is True
+        assert result[-1]["reason"] == "regex_timeout"
+
+    def test_scan_deadline_marks_incomplete_results(self, sandbox_dir: Path, monkeypatch):
+        monkeypatch.setattr("stride_gpt.agent.tools.GREP_SCAN_TIMEOUT_SECONDS", 0)
+        result = json.loads(grep_content(sandbox_dir, "does-not-exist"))
+        assert result[-1]["reason"] == "scan_timeout"
+        assert result[-1]["truncated"] is True
+
+    def test_oversized_files_are_explicitly_skipped(self, sandbox_dir: Path, monkeypatch):
+        monkeypatch.setattr("stride_gpt.agent.tools.MAX_SOURCE_FILE_BYTES", 64)
+        (sandbox_dir / "oversized.py").write_text("secret=" + "x" * 65)
+        result = json.loads(grep_content(sandbox_dir, "secret", path="oversized.py"))
+        assert result == [{
+            "truncated": True, "reason": "file_size_limit",
+            "oversized_files_skipped": 1, "max_file_bytes": 64,
+        }]
+
+    @pytest.mark.parametrize("max_results", [0, -1, True, 1.5, "2"])
+    def test_invalid_result_limit_is_rejected(self, sandbox_dir: Path, max_results):
+        result = grep_content(sandbox_dir, "Flask", max_results=max_results)
+        assert result.startswith("Error:")
+
+    def test_model_cannot_increase_result_cap(self, sandbox_dir: Path):
+        (sandbox_dir / "many.txt").write_text("match\n" * 100)
+        result = json.loads(grep_content(sandbox_dir, "match", path="many.txt", max_results=10_000))
+        assert len(result) == 21
+        assert result[-1]["reason"] == "result_limit"
+        assert result[-1]["total_limit"] == 20
+
+    def test_crlf_and_unicode_line_numbers(self, sandbox_dir: Path):
+        (sandbox_dir / "unicode.py").write_bytes("alpha\r\nβeta\r\ngamma".encode())
+        result = json.loads(grep_content(sandbox_dir, "βeta", path="unicode.py"))
+        assert result == [{"file": "unicode.py", "line": 2, "content": "βeta"}]
 
     def test_symlink_escape_blocked(self, sandbox_dir: Path, tmp_path_factory):
         """A symlinked file pointing outside the root must not be read. read_file

@@ -20,7 +20,7 @@ CI runs the same checks on Python 3.12, 3.13 and 3.14:
 
 ```bash
 uv run ruff check .          # lint
-uv run pytest -q             # tests (a few seconds; no network, no API keys)
+LITELLM_LOCAL_MODEL_COST_MAP=True uv run pytest -q  # mock providers; bundled model catalogue
 uv lock --check              # pyproject.toml and uv.lock agree
 python scripts/build_control_catalog.py --check   # generated cards and docs are current
 ```

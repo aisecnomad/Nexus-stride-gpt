@@ -37,6 +37,7 @@ from stride_gpt.agent.budget import (
     format_llm_call_ceiling,
     prompt_plan_approval,
 )
+from stride_gpt.agent.safe_io import atomic_write_text, prepare_output_path
 from stride_gpt.config import (
     config_to_model_pair,
     load_config,
@@ -384,7 +385,7 @@ def _prepare_output_dir(output: Path) -> bool:
     crash the run after the planning call has been paid for.
     """
     try:
-        output.parent.mkdir(parents=True, exist_ok=True)
+        prepare_output_path(output)
     except OSError as e:
         console.print(f"[red]Cannot create {output.parent}: {e.strerror}.[/red]")
         return False
@@ -642,13 +643,13 @@ def _handle_analyze(config: dict, args_str: str) -> None:
         rendered = render_html(report)
 
     if output_path:
-        output_path.write_text(rendered)
+        atomic_write_text(output_path, rendered)
         console.print(f"\n[green]Report written to {output_path}[/green]")
         # JSON output pairs an HTML companion next to it — JSON is the machine
         # artifact, HTML is its human view.
         if output_format == OutputFormat.json:
             html_path = output_path.with_suffix(".html")
-            html_path.write_text(render_html(report))
+            atomic_write_text(html_path, render_html(report))
             console.print(f"[green]HTML view written to {html_path}[/green]")
         _persist_analyze_intermediates(
             output=output_path,
@@ -788,11 +789,11 @@ def _handle_reports(args_str: str) -> None:
     if output_path:
         if not _prepare_output_dir(output_path):
             return
-        output_path.write_text(rendered)
+        atomic_write_text(output_path, rendered)
         console.print(f"[green]Report exported to {output_path}[/green]")
         if output_format == OutputFormat.json:
             html_path = output_path.with_suffix(".html")
-            html_path.write_text(render_html_from_json(data))
+            atomic_write_text(html_path, render_html_from_json(data))
             console.print(f"[green]HTML view written to {html_path}[/green]")
     else:
         console.print()
@@ -924,9 +925,9 @@ def _handle_quick(config: dict, args_str: str) -> None:
             # produce byte-identical HTML for the same analysis.
             from stride_gpt.agent.report import load_report
             html = render_html_from_json(load_report(saved_path))
-            output_path.write_text(html)
+            atomic_write_text(output_path, html)
         else:
-            output_path.write_text(markdown)
+            atomic_write_text(output_path, markdown)
         console.print(f"[green]Report written to {output_path}[/green]")
         _persist_quick_intermediates(
             output=output_path,
@@ -1109,11 +1110,11 @@ def analyze(
         rendered = render_html(report)
 
     if output:
-        output.write_text(rendered)
+        atomic_write_text(output, rendered)
         console.print(f"\n[green]Report written to {output}[/green]")
         if output_format == OutputFormat.json:
             html_path = output.with_suffix(".html")
-            html_path.write_text(render_html(report))
+            atomic_write_text(html_path, render_html(report))
             console.print(f"[green]HTML view written to {html_path}[/green]")
         _persist_analyze_intermediates(
             output=output,
@@ -1234,9 +1235,9 @@ def quick(
     if output:
         if output_format == OutputFormat.html:
             html = render_html_from_json(load_report(saved_path))
-            output.write_text(html)
+            atomic_write_text(output, html)
         else:
-            output.write_text(markdown)
+            atomic_write_text(output, markdown)
         console.print(f"[green]Report written to {output}[/green]")
         _persist_quick_intermediates(
             output=output,
@@ -1330,11 +1331,11 @@ def reports(
     if output:
         if not _prepare_output_dir(output):
             raise typer.Exit(1)
-        output.write_text(rendered)
+        atomic_write_text(output, rendered)
         console.print(f"[green]Report exported to {output}[/green]")
         if output_format == OutputFormat.json:
             html_path = output.with_suffix(".html")
-            html_path.write_text(render_html_from_json(data))
+            atomic_write_text(html_path, render_html_from_json(data))
             console.print(f"[green]HTML view written to {html_path}[/green]")
     else:
         console.print()
@@ -1492,7 +1493,7 @@ def _export_compliance(report_path: Path, output: Path | None) -> None:
         rendered = buffer.getvalue()
     if not _prepare_output_dir(output):
         raise typer.Exit(1)
-    output.write_text(rendered, encoding="utf-8")
+    atomic_write_text(output, rendered)
     console.print(f"[green]Compliance mapping written to {output}[/green]")
 
 

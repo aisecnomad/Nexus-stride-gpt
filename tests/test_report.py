@@ -634,7 +634,7 @@ class TestMitreAttackColumn:
 
         md = render_markdown(report)
         assert "MITRE ATT&CK" in md
-        assert "| T1110, T1078, AML.T0051 |" in md
+        assert "| T1110 (Brute Force), T1078 (Valid Accounts), AML.T0051 (LLM Prompt Injection) |" in md
 
         sarif = render_sarif(report)
         result = sarif["runs"][0]["results"][0]
@@ -806,9 +806,8 @@ class TestRenderHtml:
         assert "attack.mitre.org" not in html
         assert "atlas.mitre.org" not in html
 
-    def test_mitre_pill_falls_back_to_span_for_unknown_id_pattern(self, sample_plan):
-        """A malformed ID that matches neither pattern still renders, but as
-        a plain span instead of a broken link."""
+    def test_mitre_pill_drops_unknown_identifier(self, sample_plan):
+        """An unknown identifier must not become an authoritative annotation."""
         from stride_gpt.core.schemas import SubsystemFinding
 
         report = AnalysisReport(
@@ -824,11 +823,11 @@ class TestRenderHtml:
             metadata={},
         )
         html = render_html(report)
-        assert ">WEIRD<" in html
+        assert "WEIRD" not in html
         # No link emitted for the unknown pattern.
         assert 'href="https://attack.mitre.org/techniques/WEIRD' not in html
 
-    def test_mitre_pill_id_is_html_escaped(self, sample_plan):
+    def test_hostile_mitre_pill_is_discarded(self, sample_plan):
         """Even though valid IDs are alphanumeric, hostile/synthetic input
         must not bypass escaping on the way to a browser."""
         from stride_gpt.core.schemas import SubsystemFinding
@@ -847,7 +846,8 @@ class TestRenderHtml:
         )
         html = render_html(report)
         assert "<script>" not in html.split("<title>")[0]  # not in body
-        assert "&lt;script&gt;" in html
+        assert "&lt;script&gt;" not in html
+        assert ">evil<" not in html
 
     def test_quick_report_renders_with_single_subsystem(self, sample_plan):
         """The /quick path saves a synthetic 'Application' subsystem with no

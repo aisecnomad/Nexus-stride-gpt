@@ -6,7 +6,7 @@ We release security updates for the following versions:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| latest (master branch)  | :white_check_mark: |
+| latest (main branch)  | :white_check_mark: |
 
 Always use the latest version of STRIDE GPT for the best security.
 
@@ -78,7 +78,7 @@ For a reference architecture (identity-aware proxy with OIDC, TLS 1.3 and mTLS, 
 1. **Dependency Management**
    - Regularly update dependencies to patch security vulnerabilities
    - Review `pyproject.toml` and `uv.lock` for outdated or vulnerable packages
-   - Automated scanning with `pip-audit` runs on every commit (see Automated Security Scanning section)
+   - Automated scanning with `pip-audit` runs on pushes and pull requests targeting `main`, `master`, or `develop` (see Automated Security Scanning section)
 
 2. **Input Validation**
    - The application validates inputs, but always review user-provided data
@@ -94,7 +94,7 @@ STRIDE GPT uses comprehensive automated security scanning in our CI/CD pipeline 
 
 ### Security Scanning Tools
 
-Our security workflow runs automatically on every push and pull request, using:
+Our security workflow runs on pushes and pull requests targeting `main`, `master`, or `develop`, plus scheduled and manual runs, using:
 
 1. **Python Code Analysis**
    - **Bandit**: Identifies common security issues in Python code (SQL injection, hardcoded credentials, etc.)
@@ -120,15 +120,26 @@ Our security workflow runs automatically on every push and pull request, using:
 Security scan results are available in multiple locations:
 
 - **GitHub Security Tab**: View all code scanning alerts, secret scanning alerts, and Dependabot alerts
-- **Pull Request Checks**: Security scans run on every PR with results visible in the checks
+- **Pull Request Checks**: Security scans run on PRs targeting `main`, `master`, or `develop`, with results visible in the checks
 - **Actions Tab**: Detailed workflow logs and security reports
 - **Workflow Artifacts**: Downloadable JSON reports (Bandit, pip-audit) for deeper analysis
 
 ### Continuous Monitoring
 
 - **Scheduled Scans**: Security workflow runs weekly (Mondays at 9 AM UTC) to catch newly disclosed vulnerabilities
-- **Push-based Scans**: Automatic scanning on every push to `master` and `develop` branches
-- **Pull Request Scanning**: All PRs are scanned before merge
+- **Push-based Scans**: Automatic scanning on every push to `main`, `master`, and `develop`
+- **Pull Request Scanning**: Python, secret, CodeQL, and dependency checks run for PRs targeting these branches. Container builds and scans run on pushes and manual runs.
+- **Merge protection**: Repository administrators should require `Lint (ruff)`, the three Python test matrix checks, and `Security Scan Summary` in their branch rules. The summary fails for failed or cancelled scans; workflow definitions alone do not configure branch protection.
+
+The reviewed protection configuration is in [`.github/branch-protection-main.json`](.github/branch-protection-main.json). After the updated checks have run on a PR, a repository administrator can apply it with an authenticated GitHub CLI:
+
+```bash
+gh api --method PUT repos/aisecnomad/Nexus-stride-gpt/branches/main/protection \
+  --input .github/branch-protection-main.json
+gh api repos/aisecnomad/Nexus-stride-gpt/branches/main/protection
+```
+
+This requires one approving review, current passing checks, and resolved conversations; it also applies to administrators and blocks force pushes and branch deletion. Committing this file does not activate protection. The command requires repository administration permission, which the connected GitHub App does not provide.
 
 ### Addressing Security Findings
 
@@ -183,7 +194,9 @@ STRIDE GPT is designed for **legitimate threat modeling and security analysis pu
    - **Recommendation**: Use sanitized/generic system descriptions
 
 2. **Streamlit Session State**
-   - Session data is stored in browser memory
+   - Streamlit session state lives on the server; widget values are also sent to the browser
+   - Operator-provided environment credentials stay server-side and are never prefilled in password widgets
+   - User-entered credentials are held in that user's session and widget; password masking is not a secrecy boundary from the user
    - Clear sensitive information when finished
    - Close browser sessions after use
 
