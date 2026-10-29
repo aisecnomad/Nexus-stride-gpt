@@ -16,39 +16,41 @@ Agents that aren't registered, or have no owner, are denied at runtime. Retire a
 
 ## Autonomy levels
 
-STRIDE-GPT uses the four deployment archetypes from the AI Insider Threat model:
+STRIDE-GPT uses six deployment archetypes, extending the AI Insider Threat model with L0 (no autonomy) and L5 (fully autonomous):
 
 | Level | Archetype | Human role | Risk |
 |-------|-----------|------------|------|
+| **L0** | No Autonomy | Pure tool: no decision-making, planning or chaining | None; no insider threat surface |
 | **L1** | Human-as-Operator | Approves every action before it runs | Low; the residual risk is reviewer fatigue |
 | **L2** | Human-as-Collaborator | Agent acts within scoped boundaries; some actions are auto-approved | Medium; auto-approved actions are the soft underbelly |
 | **L3** | Human-as-Supervisor | Agent runs autonomously per task; a human reviews outputs, not actions | High |
 | **L4** | Human-as-Auditor | Continuous or triggered execution with persistent access; humans review logs periodically | Critical |
+| **L5** | Fully Autonomous | Persistent, self-directed agent; sets its own goals, acquires resources, spawns sub-agents; no human in the loop | Extreme; full insider threat surface at machine speed |
 
 ## A baseline by autonomy level
 
 Risk scales steeply with autonomy, so control strength should too. The table below is STRIDE-GPT's suggested baseline, not a requirement of any one standard. ● = expected, ○ = recommended, — = rarely needed.
 
-| Control | L1 | L2 | L3 | L4 |
-|---------|----|----|----|----|
-| [AGT-01](controls-catalog.md#agt-01) Inventory, named owner, autonomy level | ● | ● | ● | ● |
-| [AGT-02](controls-catalog.md#agt-02) Least-agency design | ● | ● | ● | ● |
-| [AGT-03](controls-catalog.md#agt-03) Distinct, verifiable agent identity | ○ | ● | ● | ● |
-| [AGT-04](controls-catalog.md#agt-04) Task-scoped, short-lived, delegated credentials | ○ | ● | ● | ● |
-| [AGT-05](controls-catalog.md#agt-05) Tool allow-listing, policy-enforced calls | ● | ● | ● | ● |
-| [AGT-06](controls-catalog.md#agt-06) Tool and MCP supply-chain integrity | ● | ● | ● | ● |
-| [AGT-07](controls-catalog.md#agt-07) Human approval for high-impact actions | every action | ● | ● | ● |
-| [AGT-08](controls-catalog.md#agt-08) Sandboxed, ephemeral execution | ○ | ● | ● | ● |
-| [AGT-09](controls-catalog.md#agt-09) Memory and context integrity | ○ | ○ | ● | ● |
-| [AGT-10](controls-catalog.md#agt-10) Authenticated inter-agent communication (multi-agent only) | ○ | ● | ● | ● |
-| [AGT-11](controls-catalog.md#agt-11) Action-level, tamper-evident audit trail | ● | ● | ● | ● |
-| [AGT-12](controls-catalog.md#agt-12) Behavioural monitoring and canaries | — | ○ | ● | ● |
-| [AGT-13](controls-catalog.md#agt-13) Kill switch and rapid containment | ○ | ● | ● | ● drilled |
-| [AGT-14](controls-catalog.md#agt-14) Execution budgets and circuit breakers | ○ | ● | ● | ● |
-| [AI-01](controls-catalog.md#ai-01) Prompt-injection defences | ● | ● | ● | ● |
-| [AI-07](controls-catalog.md#ai-07) Adversarial testing and red teaming | ○ | ● | ● | ● independent |
+| Control | L0 | L1 | L2 | L3 | L4 | L5 |
+|---------|----|----|----|----|----|----|
+| [AGT-01](controls-catalog.md#agt-01) Inventory, named owner, autonomy level | ○ | ● | ● | ● | ● | ● |
+| [AGT-02](controls-catalog.md#agt-02) Least-agency design | — | ● | ● | ● | ● | ● |
+| [AGT-03](controls-catalog.md#agt-03) Distinct, verifiable agent identity | — | ○ | ● | ● | ● | ● |
+| [AGT-04](controls-catalog.md#agt-04) Task-scoped, short-lived, delegated credentials | — | ○ | ● | ● | ● | ● |
+| [AGT-05](controls-catalog.md#agt-05) Tool allow-listing, policy-enforced calls | — | ● | ● | ● | ● | ● |
+| [AGT-06](controls-catalog.md#agt-06) Tool and MCP supply-chain integrity | — | ● | ● | ● | ● | ● |
+| [AGT-07](controls-catalog.md#agt-07) Human approval for high-impact actions | — | every action | ● | ● | ● | ● autonomous safeguards |
+| [AGT-08](controls-catalog.md#agt-08) Sandboxed, ephemeral execution | — | ○ | ● | ● | ● | ● hardened |
+| [AGT-09](controls-catalog.md#agt-09) Memory and context integrity | — | ○ | ○ | ● | ● | ● |
+| [AGT-10](controls-catalog.md#agt-10) Authenticated inter-agent communication (multi-agent only) | — | ○ | ● | ● | ● | ● mutual attestation |
+| [AGT-11](controls-catalog.md#agt-11) Action-level, tamper-evident audit trail | — | ● | ● | ● | ● | ● immutable |
+| [AGT-12](controls-catalog.md#agt-12) Behavioural monitoring and canaries | — | — | ○ | ● | ● | ● continuous |
+| [AGT-13](controls-catalog.md#agt-13) Kill switch and rapid containment | — | ○ | ● | ● | ● drilled | ● drilled + autonomous failsafe |
+| [AGT-14](controls-catalog.md#agt-14) Execution budgets and circuit breakers | — | ○ | ● | ● | ● | ● |
+| [AI-01](controls-catalog.md#ai-01) Prompt-injection defences | — | ● | ● | ● | ● | ● |
+| [AI-07](controls-catalog.md#ai-07) Adversarial testing and red teaming | — | ○ | ● | ● | ● independent | ● independent + continuous |
 
-Two rules of thumb follow from the table. First, **every level needs AGT-01, AGT-02, AGT-05, AGT-06 and AGT-11**: know the agent, constrain it, govern its tools and record what it does. Second, **from L3 upward, assume the agent will at some point act against your interests** — through prompt injection, a poisoned tool, or misalignment — and make sure you would detect it (AGT-12) and could stop it (AGT-13).
+Three rules of thumb follow from the table. First, **L0 (pure tools) need only inventory** — they have no agency to govern. Second, **every level from L1 upward needs AGT-01, AGT-02, AGT-05, AGT-06 and AGT-11**: know the agent, constrain it, govern its tools and record what it does. Third, **from L3 upward, assume the agent will at some point act against your interests** — through prompt injection, a poisoned tool, or misalignment — and make sure you would detect it (AGT-12) and could stop it (AGT-13). **At L5, the agent has no human guardrail**: every control must be self-enforcing, with autonomous failsafes and immutable audit trails that survive the agent's own attempts to modify them.
 
 ## The controls, by what they stop
 

@@ -30,12 +30,14 @@ Modern frontier agents now match the four classical preconditions for insider th
 
 Risk scales steeply with autonomy. When evaluating threats, consider where this subsystem sits:
 
+- **L0 — No Autonomy (NONE)**: Pure tool mode. AI executes a single deterministic function with no decision-making, planning or chaining. Example: a sentiment classifier API, a code formatter. No insider threat surface.
 - **L1 — Human-as-Operator (LOW)**: Human approves every action before execution. Main residual risk is reviewer fatigue.
 - **L2 — Human-as-Collaborator (MEDIUM)**: Agent acts within scoped boundaries; auto-approved actions are the soft underbelly.
 - **L3 — Human-as-Supervisor (HIGH)**: Agent runs autonomously per task; human reviews outputs not actions. All five categories below are live during the task window.
 - **L4 — Human-as-Auditor (CRITICAL)**: Continuous or triggered execution with persistent access; humans review logs periodically. Mirrors the long-tenured trusted employee — the most dangerous classical insider archetype.
+- **L5 — Fully Autonomous (EXTREME)**: Persistent, self-directed agent with no human in the loop. Sets its own goals, acquires resources, spawns sub-agents. Full insider threat surface at machine speed with no oversight friction.
 
-If the deployment archetype is unclear from the code, assume L2/L3 for any system with tool-use capability or persistent credentials.
+If the deployment archetype is unclear from the code, assume L2/L3 for any system with tool-use capability or persistent credentials. Pure tools with no decision-making are L0; fully autonomous agents that set their own goals are L5.
 
 ## The five threat categories
 
