@@ -7,19 +7,17 @@ that a prompt-injection or malicious codebase might produce.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
 
+from stride_gpt.agent.evidence import verify_evidence
 from stride_gpt.agent.tools import (
     MAX_GREP_PATTERN_LEN,
     grep_content,
     list_directory,
     read_file,
-    resolve_safe_path,
 )
-from stride_gpt.agent.evidence import verify_evidence
 
 
 class TestPathSandboxAdversarial:
