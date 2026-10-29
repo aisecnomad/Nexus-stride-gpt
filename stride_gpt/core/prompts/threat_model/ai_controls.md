@@ -49,7 +49,7 @@ Each threat must additionally include:
 
 ### AGT — Agentic AI
 
-- `AGT-01` **Agent inventory, named owner and assigned autonomy level.** Register every agent with a named accountable owner, purpose, autonomy level (L1-L4), tools, data scopes and credentials, and block agents that are unregistered or unowned. (R, E, S)
+- `AGT-01` **Agent inventory, named owner and assigned autonomy level.** Register every agent with a named accountable owner, purpose, autonomy level (L0-L5), tools, data scopes and credentials, and block agents that are unregistered or unowned. (R, E, S)
 - `AGT-02` **Least-agency design.** Give each agent the lowest autonomy, narrowest goal and smallest action space that meet the business need, preferring deterministic workflows for high-risk tasks. (E)
 - `AGT-03` **Distinct, verifiable identity for every agent.** Give each agent, and ideally each running instance, its own attested non-human identity — never a shared service account or a human's credentials — so every action is attributable. (S, R)
 - `AGT-04` **Task-scoped, short-lived, delegated credentials.** Issue agents just-in-time credentials scoped to the task and audience with minute-level lifetimes, injected at the tool layer and never placed in the model's context. (E, I, S)
