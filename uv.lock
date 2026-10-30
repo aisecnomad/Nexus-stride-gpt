@@ -2644,6 +2644,7 @@ dev = [
 ]
 web = [
     { name = "openai" },
+    { name = "pillow" },
     { name = "pygithub" },
     { name = "requests" },
     { name = "streamlit" },
@@ -2673,6 +2674,7 @@ dev = [
 ]
 web = [
     { name = "openai" },
+    { name = "pillow" },
     { name = "pygithub" },
     { name = "requests", specifier = ">=2.34.2" },
     { name = "streamlit", specifier = ">=1.58.0" },

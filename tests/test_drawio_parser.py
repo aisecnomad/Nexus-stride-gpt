@@ -9,6 +9,8 @@ malformed or malicious input.
 
 from __future__ import annotations
 
+import pytest
+
 from stride_gpt.core.drawio_parser import drawio_to_prompt_section, parse_drawio_xml
 
 # A flat diagram: three vertices, two edges, no groups. Mirrors the module's
@@ -140,3 +142,18 @@ class TestDrawioToPromptSection:
         assert "Web -> DB" in section
         assert "Trust Boundaries / Security Zones:" in section
         assert "DMZ" in section
+
+
+def test_oversized_xml_is_rejected_before_parsing(monkeypatch):
+    import stride_gpt.core.drawio_parser as parser
+
+    monkeypatch.setattr(parser, "MAX_DRAWIO_CHARS", len(FLAT_XML) - 1)
+    monkeypatch.setattr(parser, "_safe_fromstring", lambda _xml: pytest.fail("parsed oversized XML"))
+    assert parser.drawio_to_prompt_section(FLAT_XML) == ""
+
+
+def test_excessive_cell_count_rejects_whole_diagram(monkeypatch):
+    import stride_gpt.core.drawio_parser as parser
+
+    monkeypatch.setattr(parser, "MAX_DRAWIO_CELLS", 2)
+    assert parser.drawio_to_prompt_section(FLAT_XML) == ""

@@ -95,11 +95,12 @@ def _prepare_portable(path: Path, *, create_parents: bool) -> None:
             info = current.lstat()
         if _is_link(info) or not stat.S_ISDIR(info.st_mode):
             raise OSError(errno.ELOOP, "Export parent must be a directory, not a link", str(current))
+    destination_info: os.stat_result | None
     try:
-        info = path.lstat()
+        destination_info = path.lstat()
     except FileNotFoundError:
-        info = None
-    _check_destination(info, path)
+        destination_info = None
+    _check_destination(destination_info, path)
 
 
 def prepare_output_path(path: Path) -> None:

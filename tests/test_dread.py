@@ -116,6 +116,10 @@ class TestParseDreadResponse:
         parsed = _parse_dread_response('{"Risk Assessment": []}')
         assert parsed == {"Risk Assessment": []}
 
+    def test_non_object_returns_structured_error(self):
+        parsed = _parse_dread_response("[]")
+        assert parsed["Risk Assessment"][0]["Threat Type"] == "Error"
+
     def test_parses_fenced_json(self):
         content = '```json\n{"Risk Assessment": [{"Threat Type": "X"}]}\n```'
         parsed = _parse_dread_response(content)

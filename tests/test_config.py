@@ -7,6 +7,7 @@ import json
 import pytest
 
 from stride_gpt.config import (
+    _CancellableConfirm,
     config_to_model_pair,
     get_api_key,
     load_config,
@@ -184,7 +185,20 @@ class TestGetApiKeyWorkerFallback:
         assert get_api_key(single_tier_config, tier="worker") == ""
 
 
+class TestCancellableConfirm:
+    @pytest.mark.parametrize("answer, expected", [("y", True), ("n", False), ("q", None), ("cancel", None)])
+    def test_confirmation_keeps_cancel_distinct(self, answer, expected):
+        assert _CancellableConfirm().process_response(answer) is expected
+
+
 class TestLoadConfig:
+    @pytest.mark.parametrize("payload", [[], None, True, "config"])
+    def test_non_object_config_requests_setup(self, tmp_path, monkeypatch, payload):
+        cfg_path = tmp_path / "config.json"
+        cfg_path.write_text(json.dumps(payload))
+        monkeypatch.setattr("stride_gpt.config.CONFIG_FILE", cfg_path)
+        assert load_config() is None
+
     def test_returns_none_when_no_worker_model(self, tmp_path, monkeypatch):
         cfg_dir = tmp_path / ".stride-gpt"
         cfg_dir.mkdir()

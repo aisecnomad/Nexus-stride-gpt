@@ -97,6 +97,7 @@ Run the checks CI runs:
 ```bash
 uv lock --check
 uv run ruff check .
+uv run mypy stride_gpt/ --ignore-missing-imports
 uv run pytest
 ```
 
@@ -153,11 +154,11 @@ git push origin fix/relink-upstream
 
 1. **Rulesets** (Settings → Rules → Rulesets), each with an empty bypass list:
    - `upstream-master`: block force pushes and restrict deletions. Do not require linear history: the exact mirror must retain upstream's merge commits, and that rule would reject a fast-forward that brings in a new merge commit.
-   - `main`: require a pull request (one approval once there are two or more maintainers); require the status checks `Lint (ruff)`, `Test (Python 3.12)`, `Test (Python 3.13)`, `Test (Python 3.14)` and `Lane guard`; block force pushes; restrict deletions. Don't require linear history: sync pull requests need merge commits.
+   - `main`: require a pull request and the status checks `Lint (ruff)`, `Type check (mypy)`, `Test (Python 3.12)`, `Test (Python 3.13)`, `Test (Python 3.14)`, `Package (installed wheel)`, `Lane guard` and `Security Scan Summary`; require branches to be up to date, resolve review conversations, block force pushes and restrict deletions. The reviewed [branch-protection payload](../.github/branch-protection-main.json) also requires one approval and applies to administrators. An administrator must activate protection; committing the payload does not change GitHub settings. Don't require linear history: sync pull requests need merge commits.
 2. **Merge options** (Settings → General → Pull Requests): keep **Allow merge commits** on.
-3. **Release workflow**: Actions → *Release* → **⋯** → **Disable workflow**. It publishes upstream's PyPI package and Docker image, which can't succeed from here and shouldn't be attempted.
-4. **Dependabot**: upstream's `.github/dependabot.yml` is live here, because this isn't a fork, so Dependabot opens pull requests against `main`. They change `uv.lock` while upstream changes it too, so syncs would conflict there, and upstream's own bumps arrive through the sync anyway. We recommend deleting the file on `main` and closing its pull requests; when a later sync edits the file, resolve by keeping it deleted.
-5. **Advanced Security** (Settings → Advanced Security): turn on **Dependency graph**, which the *Dependency Review* check on every pull request needs, then **Dependabot alerts** and **Private vulnerability reporting**, so this repository's Security tab can take reports.
+3. **Release candidates**: keep the *Release candidate* workflow enabled. It builds and uploads reviewable artifacts without publishing to PyPI, Docker Hub or GitHub Releases. See [RELEASING.md](../RELEASING.md) before configuring Nexus-controlled release namespaces or enabling publishing.
+4. **Dependabot**: keep [`.github/dependabot.yml`](../.github/dependabot.yml) active for Python dependencies, Docker images and GitHub Actions. Review updates against this repository's security floors and run the full checks. If an upstream sync also changes `uv.lock`, resolve the dependency manifests together, regenerate the lockfile and verify `uv lock --check`; do not discard the security update merely to avoid a merge conflict.
+5. **Advanced Security** (Settings → Advanced Security): turn on **Dependency graph**, which the *Dependency Review* check on every pull request needs, then **Dependabot alerts** and **Private vulnerability reporting**, so this repository's Security tab can take reports. Dependency Review remains enforcing: if the graph is disabled, enable it and rerun the failed security jobs; do not suppress the check or treat its failure as a successful review.
 6. **Actions permissions** (Settings → Actions → General): leave **Allow GitHub Actions to create and approve pull requests** off. It lets any workflow approve pull requests, and the sync doesn't need it.
 7. **Collaborators**: Settings → Collaborators → **Add people**. Give contributors *Write* and co-maintainers *Maintain*, and add co-maintainers to `.github/CODEOWNERS`.
 8. **`@claude` (optional)**: upstream's `claude.yml` workflow responds when an issue or comment mentions `@claude`. It needs an `ANTHROPIC_API_KEY` repository secret; without one, those runs fail and nothing else is affected. Collaborators can read repository secrets through a workflow, so use a dedicated key with a spending limit.

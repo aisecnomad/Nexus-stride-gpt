@@ -10,22 +10,24 @@ You cannot secure agents you don't know about. The first control, **AGT-01**, re
 
 - a **named, accountable owner** (AIUC-1 E004; ISO/IEC 42001 A.3.2);
 - its **purpose**, model and version, tools and MCP servers, data scopes, credentials and environments (ISO/IEC 42001 A.4.2; ISO/IEC 27001 A.5.9);
-- an **assigned autonomy level**, which determines every other control's strength.
+- an **assigned autonomy level**, which informs control strength alongside privileges, data sensitivity, exposure and impact.
 
 Agents that aren't registered, or have no owner, are denied at runtime. Retire agents together with their credentials so none are orphaned. Starting with inventory, ownership and autonomy is the governance baseline Dahunsi's series argues for, and it is what makes the rest of the controls enforceable.
 
 ## Autonomy levels
 
-STRIDE-GPT uses a local six-level deployment taxonomy, extending the AI Insider Threat model with L0 and L5. This is not a normative mapping to CSA's [autonomy proposal](https://cloudsecurityalliance.org/blog/2026/01/28/levels-of-autonomy): CSA L2 means approval of a plan, whereas the local L2 archetype describes scoped auto-approved actions. Record the taxonomy and version with any assessment; do not interchange level numbers across frameworks.
+STRIDE-GPT uses the same six-level scale as [Nexus-ShadowScan](https://github.com/aisecnomad/Nexus-ShadowScan/blob/main/docs/concepts/autonomy.md), from **L0 Chatbot** to **L5 Fully Autonomous** (`shadowscan.autonomy/v1`). It describes action authority, approval scope and initiation; it is not a severity score or a numeric crosswalk to another framework. Autonomy informs control selection alongside data sensitivity, permissions, impact and exposure.
 
-| Level | Archetype | Human role | Risk |
-|-------|-----------|------------|------|
-| **L0** | No Autonomy | Information or recommendations only; humans execute external actions | Data disclosure, unsafe outputs and supply-chain risks remain |
-| **L1** | Human-as-Operator | Approves every action before it runs | Low; the residual risk is reviewer fatigue |
-| **L2** | Human-as-Collaborator | Agent acts within scoped boundaries; some actions are auto-approved | Medium; auto-approved actions are the soft underbelly |
-| **L3** | Human-as-Supervisor | Agent runs autonomously per task; a human reviews outputs, not actions | High |
-| **L4** | Human-as-Auditor | Continuous or triggered execution with persistent access; humans review logs periodically | Critical |
-| **L5** | Fully Autonomous | Persistent, self-directed agent; sets its own goals, acquires resources, spawns sub-agents; no human in the loop | Extreme; full insider threat surface at machine speed |
+| Level | Name | Behaviour and oversight |
+|-------|------|-------------------------|
+| **L0** | Chatbot | Answers only; no tools or actions. A person starts every exchange. |
+| **L1** | Copilot | Assists a person in their session: drafts, suggests or retrieves with read-only tools. The person performs or confirms every action. |
+| **L2** | Supervised | A person starts the run and approves each side-effecting tool action before execution. |
+| **L3** | Semi-Autonomous / Agentic Workflow | Bounded multi-step workflow or model-driven loop; approval at checkpoints, not per action. May be event-triggered. |
+| **L4** | High Autonomy | Model plans and acts in a loop with write or execution capabilities and no per-action approval; people supervise by exception. |
+| **L5** | Fully Autonomous | Self-started by event, schedule or another agent; write, execute or delegated capabilities with no approval gates; people only monitor. |
+
+Report a level only when approval and initiation evidence support it. Tool access or credentials alone do not justify L2/L3, and unknown is not L0. A scheduled flow with checkpoint approval remains L3, not L5. Earlier STRIDE-GPT reports used different L1–L4 meanings: reassess their behaviour before comparing them with this scale. New model-output threats with a valid level carry `autonomy_taxonomy: "shadowscan.autonomy/v1"`. This identifies the vocabulary, not verified evidence; loading a historical report does not add or change that marker.
 
 ## A baseline by autonomy level
 
@@ -39,7 +41,7 @@ Autonomy is one risk dimension; privileges, data sensitivity, exposure and conse
 | [AGT-04](controls-catalog.md#agt-04) Task-scoped, short-lived, delegated credentials | ○ | ○ | ● | ● | ● | ● |
 | [AGT-05](controls-catalog.md#agt-05) Tool allow-listing, policy-enforced calls | — | ● | ● | ● | ● | ● |
 | [AGT-06](controls-catalog.md#agt-06) Tool and MCP supply-chain integrity | ○ | ● | ● | ● | ● | ● |
-| [AGT-07](controls-catalog.md#agt-07) Human approval for high-impact actions | — | every action | ● | ● | ● | human approval or prohibit action |
+| [AGT-07](controls-catalog.md#agt-07) Human approval for high-impact actions | — | person performs/confirms actions | every side-effecting action | checkpoints; gate high-impact actions | gate when required, or prohibit action | gate when required, or prohibit action |
 | [AGT-08](controls-catalog.md#agt-08) Sandboxed, ephemeral execution | ○ | ○ | ● | ● | ● | ● hardened |
 | [AGT-09](controls-catalog.md#agt-09) Memory and context integrity | ○ | ○ | ○ | ● | ● | ● |
 | [AGT-10](controls-catalog.md#agt-10) Authenticated inter-agent communication (multi-agent only) | — | ○ | ● | ● | ● | ● mutual attestation |
@@ -52,7 +54,7 @@ Autonomy is one risk dimension; privileges, data sensitivity, exposure and conse
 
 **L0 is not risk-free.** Information-only AI still needs input/output validation, data minimization and access controls, dependency/model provenance, appropriate audit records and adversarial evaluation. Apply AI-01 when an LLM consumes untrusted instructions or content; credential and runtime controls apply whenever the service has credentials or executes code. A single-function tool that performs external actions is not automatically L0.
 
-**From L1 upward**, inventory, tool policy, supply-chain integrity and attributable action logs remain expected. From L3 upward, plan for compromised or misaligned behavior and verify detection and containment. **L5 is a research endpoint, not a deployment recommendation**: a table of safeguards cannot establish that self-directed operation is safe. Actions requiring human authorization must retain that gate or be prohibited, even if this reduces effective autonomy.
+**From L1 upward**, inventory, tool policy, supply-chain integrity and attributable action logs remain expected. From L3 upward, plan for compromised or misaligned behavior and verify detection and containment. **L5 describes unattended operation, not an assurance of safety**: a table of safeguards cannot establish that ungated operation is safe. Actions requiring human authorization must retain that gate or be prohibited, even if this reduces effective autonomy.
 
 ## The controls, by what they stop
 
@@ -140,6 +142,7 @@ The report's compliance section then shows, for instance, that AGT-07 addresses 
 - Emmanuel Dahunsi, *The Agentic AI Controls That Actually Matter* (Medium), Part 1: *Treat AI Agents As High-Privilege Insiders, Not Chatbots*; and *The Supply Chain of Agency* (Medium).
 - OWASP GenAI Security Project, *Top 10 for Agentic Applications* (2026) and *Agentic AI – Threats and Mitigations*.
 - Cloud Security Alliance, *Agentic AI Autonomy Levels and Control Framework* (2026).
-- Matt Adams, [AI Insider Threat](https://ai-insider-threat.matt-adams.co.uk).
+- [Nexus-ShadowScan autonomy scale](https://github.com/aisecnomad/Nexus-ShadowScan/blob/main/docs/concepts/autonomy.md) (L0 Chatbot to L5 Fully Autonomous).
+- Matt Adams, [AI Insider Threat](https://ai-insider-threat.matt-adams.co.uk), for the insider threat categories rather than the autonomy numbering.
 - Regulation (EU) 2024/1689 (AI Act), Art. 14; AIUC-1 (Q3 2026 revision).
 - IETF RFC 8693 (OAuth 2.0 Token Exchange), RFC 8707 (Resource Indicators), RFC 9449 (DPoP); the MCP authorization specification; SPIFFE.

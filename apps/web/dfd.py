@@ -97,9 +97,11 @@ def get_dfd_deepseek(api_key: str, model_name: str, prompt: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def get_dfd_from_image_openai(api_key: str, model_name: str, base64_image: str) -> str:
+def get_dfd_from_image_openai(
+    api_key: str, model_name: str, base64_image: str, media_type: str = "image/png"
+) -> str:
     config = LLMConfig(provider="OpenAI API", model_name=model_name, api_key=api_key)
-    mermaid, _ = parse_dfd_from_image(config, base64_image)
+    mermaid, _ = parse_dfd_from_image(config, base64_image, media_type=media_type)
     return mermaid
 
 
@@ -111,7 +113,9 @@ def get_dfd_from_image_anthropic(
     return mermaid
 
 
-def get_dfd_from_image_google(api_key: str, model_name: str, base64_image: str) -> str:
+def get_dfd_from_image_google(
+    api_key: str, model_name: str, base64_image: str, media_type: str = "image/png"
+) -> str:
     config = LLMConfig(provider="Google AI API", model_name=model_name, api_key=api_key)
-    mermaid, _ = parse_dfd_from_image(config, base64_image)
+    mermaid, _ = parse_dfd_from_image(config, base64_image, media_type=media_type)
     return mermaid

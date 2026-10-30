@@ -6,13 +6,14 @@ import contextlib
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Confirm, Prompt
+from rich.prompt import Confirm, InvalidResponse, Prompt, PromptBase
 from rich.table import Table
+from rich.text import Text
 
 from stride_gpt.models import PROVIDERS, get_models_for_provider
 
@@ -151,7 +152,7 @@ def load_config() -> dict[str, Any] | None:
         data = json.loads(CONFIG_FILE.read_text())
     except (json.JSONDecodeError, OSError):
         return None
-    if not data.get("worker_model"):
+    if not isinstance(data, dict) or not data.get("worker_model"):
         return None
     return data
 
@@ -181,13 +182,23 @@ def _cancel(console: Console) -> None:
     console.print("\n[dim]Setup cancelled.[/dim]")
 
 
-class _CancellableConfirm(Confirm):
+class _CancellableConfirm(PromptBase[bool | None]):
     """A y/n prompt that also takes q. Returns None when the user cancels."""
+
+    response_type = bool
+    choices = Confirm.choices.copy()
+    validate_error_message = "[prompt.invalid]Please enter Y or N (or q to cancel)"
+
+    def render_default(self, default: Any) -> Text:
+        return Text("(y)" if default else "(n)", style="prompt.default")
 
     def process_response(self, value: str) -> bool | None:
         if _is_quit(value):
             return None
-        return super().process_response(value)
+        value = value.strip().lower()
+        if value not in self.choices:
+            raise InvalidResponse(self.validate_error_message)
+        return value == self.choices[0]
 
 
 TIER_BLURB = {
@@ -452,7 +463,7 @@ def run_setup(console: Console, existing: dict[str, Any] | None = None) -> dict[
 
 def _ask_architect(
     console: Console, existing: dict[str, Any] | None
-) -> dict[str, Any] | bool | None:
+) -> dict[str, Any] | Literal[False] | None:
     """Branch on whether the user already has an architect tier saved.
 
     Returns:
@@ -460,9 +471,7 @@ def _ask_architect(
         - None to indicate no architect tier (single-tier setup)
         - False if the user cancelled mid-flow
     """
-    has_existing = bool(existing and existing.get("architect_model"))
-
-    if not has_existing:
+    if existing is None or not existing.get("architect_model"):
         answer = _CancellableConfirm.ask(
             "Configure a separate architect model for planning, synthesis, and "
             "context summarization? (Recommended: a stronger reasoning model)",

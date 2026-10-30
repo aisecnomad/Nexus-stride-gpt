@@ -32,7 +32,7 @@ def test_default_branch_is_covered_by_push_and_pr_checks():
 def test_protection_configuration_requires_existing_check_names():
     protection = json.loads((ROOT / ".github" / "branch-protection-main.json").read_text())
     names = set()
-    for filename in ("ci.yml", "security.yml"):
+    for filename in ("ci.yml", "security.yml", "nexus-lane-guard.yml"):
         for job in _workflow(filename)["jobs"].values():
             name = job["name"]
             versions = job.get("strategy", {}).get("matrix", {}).get("python-version", [])
@@ -42,7 +42,10 @@ def test_protection_configuration_requires_existing_check_names():
                 names.add(name)
     required = set(protection["required_status_checks"]["contexts"])
     assert required <= names
-    assert {"Lint (ruff)", "Security Scan Summary"} <= required
+    assert {
+        "Lint (ruff)", "Type check (mypy)", "Package (installed wheel)",
+        "Lane guard", "Security Scan Summary",
+    } <= required
     assert all(f"Test (Python {version})" in required for version in ("3.12", "3.13", "3.14"))
     assert protection["required_status_checks"]["strict"] is True
     assert protection["enforce_admins"] is True

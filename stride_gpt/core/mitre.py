@@ -40,7 +40,7 @@ def normalize_techniques(value: Any) -> list[tuple[str, str]]:
     accepted: dict[str, str] = {}
     for entry in entries:
         if isinstance(entry, dict):
-            candidates = [entry.get("id")]
+            candidates: list[Any] = [entry.get("id")]
         elif isinstance(entry, str):
             candidates = entry.split(",")
         else:

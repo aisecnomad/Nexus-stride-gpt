@@ -5,6 +5,11 @@ from __future__ import annotations
 import json
 import re
 
+from stride_gpt.core.autonomy import (
+    AUTONOMY_LEVELS,
+    AUTONOMY_SCHEMA_DESCRIPTION,
+    normalize_generated_autonomy,
+)
 from stride_gpt.core.llm import call_llm, call_llm_with_image
 from stride_gpt.core.markdown_safety import sanitize_markdown
 from stride_gpt.core.mitre import normalize_threat_mitre
@@ -26,6 +31,11 @@ THREAT_MODEL_SCHEMA: dict = {
                     "OWASP_LLM": {"type": ["string", "null"]},
                     "OWASP_ASI": {"type": ["string", "null"]},
                     "INSIDER_CATEGORY": {"type": ["string", "null"]},
+                    "autonomy_level": {
+                        "type": ["string", "null"],
+                        "enum": [*AUTONOMY_LEVELS, None],
+                        "description": AUTONOMY_SCHEMA_DESCRIPTION,
+                    },
                     "CONTROLS": {"type": ["array", "null"], "items": {"type": "string"}},
                 },
                 "required": ["Threat Type", "Scenario", "Potential Impact"],
@@ -180,7 +190,10 @@ def validate_threat_model_data(data: object) -> ThreatModelOutput:
             if not isinstance(threat.get(key), str):
                 raise ValueError(f"threat_model[{index}].{key} must be a string")
     return ThreatModelOutput(
-        threat_model=[normalize_threat_mitre(threat) for threat in threats],
+        threat_model=[
+            normalize_generated_autonomy(normalize_threat_mitre(threat))
+            for threat in threats
+        ],
         improvement_suggestions=suggestions,
     )
 

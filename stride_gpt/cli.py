@@ -607,7 +607,7 @@ def _handle_analyze(config: dict, args_str: str) -> None:
 
     on_checkpoint = None
     if output_path is not None:
-        checkpoint_path = resume_path if checkpoint is not None else checkpoint_path_for(output_path)
+        checkpoint_path = resume_path if checkpoint is not None and resume_path is not None else checkpoint_path_for(output_path)
         on_checkpoint = _make_checkpoint_writer(
             checkpoint_path, plan=plan, target=target_path, models=models,
             app_type_source=app_type_source, started_at=run_started_at,
@@ -1074,7 +1074,7 @@ def analyze(
 
     on_checkpoint = None
     if output is not None:
-        checkpoint_path = resume if checkpoint is not None else checkpoint_path_for(output)
+        checkpoint_path = resume if checkpoint is not None and resume is not None else checkpoint_path_for(output)
         on_checkpoint = _make_checkpoint_writer(
             checkpoint_path, plan=plan, target=target, models=models,
             app_type_source=app_type_source, started_at=run_started_at,

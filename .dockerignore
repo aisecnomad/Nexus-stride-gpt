@@ -76,3 +76,7 @@ build/
 # Security scanning configuration
 .bandit
 .gitleaks.toml
+
+# Private key material must not enter the image build context
+*.pem
+*.key

@@ -112,8 +112,11 @@ def _get_system_prompt(config: LLMConfig) -> str:
 def _parse_dread_response(content: str) -> dict:
     cleaned = _clean_json_content(content)
     try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
+        data = json.loads(cleaned)
+        if not isinstance(data, dict):
+            raise ValueError("DREAD assessment must be a JSON object")
+        return data
+    except ValueError:
         return {
             "Risk Assessment": [
                 {

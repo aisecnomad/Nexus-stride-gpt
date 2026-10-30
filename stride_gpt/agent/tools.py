@@ -12,11 +12,13 @@ import os
 import re
 import stat
 import time
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
 import regex
 
+from stride_gpt.core.autonomy import AUTONOMY_LEVELS, AUTONOMY_SCHEMA_DESCRIPTION
 from stride_gpt.core.controls import load_catalog
 from stride_gpt.core.schemas import ToolCallResult
 
@@ -151,6 +153,11 @@ def _read_source_text(path: Path) -> str | None:
     return data.decode("utf-8", errors="replace")
 
 
+def _confined_reads_available() -> bool:
+    return (os.open in os.supports_dir_fd and hasattr(os, "O_NOFOLLOW")
+            and hasattr(os, "O_DIRECTORY"))
+
+
 def read_confined_text(root: Path, path: str, *, max_bytes: int = MAX_SOURCE_FILE_BYTES) -> str | None:
     """Read through pinned directory descriptors without following swapped links.
 
@@ -163,7 +170,7 @@ def read_confined_text(root: Path, path: str, *, max_bytes: int = MAX_SOURCE_FIL
     relative = resolved.relative_to(root_resolved)
     if not relative.parts:
         raise OSError("not a regular file")
-    if not (os.open in os.supports_dir_fd and hasattr(os, "O_NOFOLLOW") and hasattr(os, "O_DIRECTORY")):
+    if not _confined_reads_available():
         raise OSError("confined file reads are unavailable on this platform")
     flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     fd = os.open(root_resolved, flags)
@@ -386,6 +393,8 @@ def grep_content(
     deadline = time.monotonic() + GREP_SCAN_TIMEOUT_SECONDS
     oversized_files = 0
     sensitive_files = 0
+    unreadable_files = 0
+    unreadable_directories = 0
 
     def incomplete(reason: str, **details: Any) -> str:
         return json.dumps([
@@ -395,14 +404,27 @@ def grep_content(
                 "reason": reason,
                 "oversized_files_skipped": oversized_files,
                 **({"sensitive_paths_skipped": sensitive_files} if sensitive_files else {}),
+                **({"unreadable_files_skipped": unreadable_files} if unreadable_files else {}),
+                **({"unreadable_directories_skipped": unreadable_directories} if unreadable_directories else {}),
                 **details,
             },
         ])
 
+    if not _confined_reads_available():
+        return incomplete(
+            "confined_reads_unavailable",
+            message="Confined file reads are unavailable on this platform; no source files were searched.",
+        )
+
+    def walk_error(error: OSError) -> None:
+        nonlocal unreadable_directories
+        unreadable_directories += 1
+
+    walk_targets: Iterable[tuple[str, list[str], list[str]]]
     if resolved.is_file():
         walk_targets = [(str(resolved.parent), [], [resolved.name])]
     else:
-        walk_targets = os.walk(resolved)
+        walk_targets = os.walk(resolved, onerror=walk_error)
 
     for dirpath, dirnames, filenames in walk_targets:
         if time.monotonic() >= deadline:
@@ -436,6 +458,7 @@ def grep_content(
                 sensitive_files += 1
                 continue
             except (OSError, ValueError, UnicodeDecodeError):
+                unreadable_files += 1
                 continue
             if text is None:
                 oversized_files += 1
@@ -457,6 +480,8 @@ def grep_content(
                     results.append({"file": rel, "line": i, "content": line.strip()[:200]})
                     if len(results) >= max_results:
                         return incomplete("result_limit", total_limit=max_results)
+    if unreadable_files or unreadable_directories:
+        return incomplete("source_read_errors")
     if oversized_files:
         return incomplete("file_size_limit", max_file_bytes=MAX_SOURCE_FILE_BYTES)
     if sensitive_files:
@@ -633,7 +658,6 @@ INSIDER_CATEGORIES = [
     "Infrastructure Sabotage",
     "Deception & Evasion",
 ]
-AUTONOMY_LEVELS = ["L0", "L1", "L2", "L3", "L4", "L5"]
 # Every control ID in the catalogue. An enum rather than a free string so
 # providers that enforce tool schemas can't accept an invented ID; the loop
 # still filters what arrives, for the ones that don't.
@@ -731,11 +755,7 @@ REPORTING_TOOLS: list[dict[str, Any]] = [
                     "autonomy_level": {
                         "type": "string",
                         "enum": AUTONOMY_LEVELS,
-                        "description": (
-                            "Deployment archetype from the insider_threat card, L0 "
-                            "(information only; humans execute actions) to L5 (fully autonomous, no "
-                            "human in the loop)."
-                        ),
+                        "description": AUTONOMY_SCHEMA_DESCRIPTION,
                     },
                     "mitre_attack": {
                         "type": "array",

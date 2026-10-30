@@ -129,7 +129,7 @@ Security scan results are available in multiple locations:
 - **Scheduled Scans**: Security workflow runs weekly (Mondays at 9 AM UTC) to catch newly disclosed vulnerabilities
 - **Push-based Scans**: Automatic scanning on every push to `main`, `master`, and `develop`
 - **Pull Request Scanning**: Python, secret, CodeQL, and dependency checks run for PRs targeting these branches. Container builds and scans run on pushes and manual runs.
-- **Merge protection**: Repository administrators should require `Lint (ruff)`, the three Python test matrix checks, and `Security Scan Summary` in their branch rules. The summary fails for failed or cancelled scans; workflow definitions alone do not configure branch protection.
+- **Merge protection**: Repository administrators should require `Lint (ruff)`, `Type check (mypy)`, the three Python test matrix checks, `Package (installed wheel)`, `Lane guard`, and `Security Scan Summary` in their branch rules. The summary fails for failed or cancelled scans; workflow definitions alone do not configure branch protection. Dependency Review requires GitHub's Dependency graph to be enabled.
 
 The reviewed protection configuration is in [`.github/branch-protection-main.json`](.github/branch-protection-main.json). After the updated checks have run on a PR, a repository administrator can apply it with an authenticated GitHub CLI:
 

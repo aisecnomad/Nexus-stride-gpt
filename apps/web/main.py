@@ -103,7 +103,9 @@ from threat_model import (
     get_threat_model_mistral,
     json_to_markdown,
 )
+from uploads import read_diagram_image
 
+from stride_gpt.core.autonomy import autonomy_scale_markdown
 from stride_gpt.core.controls import (
     COMPLIANCE_ROW_FIELDS,
     compliance_rows,
@@ -1263,7 +1265,9 @@ understanding possible vulnerabilities and attack vectors. Use this tab to gener
             key=f"drawio_editor_widget_{st.session_state.get('drawio_editor_nonce', 0)}",
         )
         if _drawio_result:
-            if _drawio_result.get("action") == "save" and _drawio_result.get("xml"):
+            if _drawio_result.get("action") == "error":
+                st.error(_drawio_result["error"])
+            elif _drawio_result.get("action") == "save" and _drawio_result.get("xml"):
                 _xml = _drawio_result["xml"]
                 st.session_state["drawio_xml"] = _xml
                 _summary = drawio_to_prompt_section(_xml)
@@ -1329,40 +1333,28 @@ understanding possible vulnerabilities and attack vectors. Use this tab to gener
                 )
             else:
                 uploaded_file = st.file_uploader(
-                    "Upload architecture diagram", type=["jpg", "jpeg", "png"]
+                    "Upload architecture diagram", type=["jpg", "jpeg", "png"], max_upload_size=10
                 )
 
                 if uploaded_file is not None:
 
-                    def encode_image(uploaded_file):
-                        return base64.b64encode(uploaded_file.read()).decode("utf-8")
-
-                    base64_image = encode_image(uploaded_file)
-                    image_analysis_prompt = create_image_analysis_prompt()
-
-                    # Determine media type from file extension
-                    file_type = uploaded_file.type
-                    if file_type == "image/png":
-                        media_type = "image/png"
-                    elif file_type in ["image/jpeg", "image/jpg"]:
-                        media_type = "image/jpeg"
-                    else:
-                        media_type = "image/jpeg"  # Default fallback
-
                     try:
+                        image_bytes, media_type = read_diagram_image(uploaded_file)
+                        base64_image = base64.b64encode(image_bytes).decode("utf-8")
+                        image_analysis_prompt = create_image_analysis_prompt()
                         if model_provider == "OpenAI API":
                             if not openai_api_key:
                                 st.error("Please enter your OpenAI API key to analyse the image.")
                                 raise ValueError
                             image_analysis_output = get_image_analysis(
-                                openai_api_key, selected_model, image_analysis_prompt, base64_image
+                                openai_api_key, selected_model, image_analysis_prompt, base64_image, media_type
                             )
                         elif model_provider == "Google AI API":
                             if not google_api_key:
                                 st.error("Please enter your Google AI API key to analyse the image.")
                                 raise ValueError
                             image_analysis_output = get_image_analysis_google(
-                                google_api_key, selected_model, image_analysis_prompt, base64_image
+                                google_api_key, selected_model, image_analysis_prompt, base64_image, media_type
                             )
                         elif model_provider == "Anthropic API":
                             if not anthropic_api_key:
@@ -1497,11 +1489,18 @@ understanding possible vulnerabilities and attack vectors. Use this tab to gener
 - Agent capabilities (tool use, code execution, web browsing, file access)
 - Multi-agent details if applicable (orchestration, communication)
 - Memory/state persistence mechanisms
-- Human oversight level (approval required, monitoring only, fully autonomous)
+- Autonomy level (L0 Chatbot through L5 Fully Autonomous), approval gates and what starts a run
 - Tools and integrations (MCP servers, APIs, databases)
 - Credential access (OAuth tokens, API keys, service accounts)
 - Autonomous action scope (what can it do without approval?)"""
             )
+            with st.expander("Autonomy levels (ShadowScan L0-L5)"):
+                st.markdown(autonomy_scale_markdown())
+                st.caption(
+                    "Describe the observed approval and initiation behaviour. "
+                    "Unknown behaviour is not a low-autonomy classification; "
+                    "autonomy alone does not determine risk."
+                )
 
     # ------------------ Threat Model Generation ------------------ #
 
@@ -1839,6 +1838,7 @@ Three ways to use this tab:
                 "Upload DFD image",
                 type=["jpg", "jpeg", "png"],
                 key="dfd_image_uploader",
+                max_upload_size=10,
                 help="PNG or JPEG. The diagram is parsed into editable Mermaid below.",
             )
         else:
@@ -1904,10 +1904,14 @@ Three ways to use this tab:
 
     if uploaded_dfd_image is not None:
         # Content identity detects a replacement even when name and size match.
-        # getvalue() also avoids consuming the upload stream on failed retries.
-        image_bytes = uploaded_dfd_image.getvalue()
-        upload_key = hashlib.sha256(image_bytes).hexdigest()
-        if st.session_state.get("dfd_last_upload_key") != upload_key:
+        # The bounded reader restores the upload cursor on failed retries.
+        try:
+            image_bytes, media_type = read_diagram_image(uploaded_dfd_image)
+        except ValueError as exc:
+            st.error(str(exc))
+            image_bytes = None
+        upload_key = hashlib.sha256(image_bytes).hexdigest() if image_bytes else None
+        if image_bytes and st.session_state.get("dfd_last_upload_key") != upload_key:
             if not _dfd_api_key:
                 st.error(
                     f"Please enter your {model_provider} key in the sidebar before "
@@ -1917,12 +1921,9 @@ Three ways to use this tab:
                 with st.spinner("Parsing DFD image..."):
                     try:
                         base64_image = base64.b64encode(image_bytes).decode("utf-8")
-                        media_type = (
-                            "image/png" if uploaded_dfd_image.type == "image/png" else "image/jpeg"
-                        )
                         if model_provider == "OpenAI API":
                             dfd_mermaid = get_dfd_from_image_openai(
-                                _dfd_api_key, selected_model, base64_image
+                                _dfd_api_key, selected_model, base64_image, media_type
                             )
                         elif model_provider == "Anthropic API":
                             dfd_mermaid = get_dfd_from_image_anthropic(
@@ -1930,7 +1931,7 @@ Three ways to use this tab:
                             )
                         elif model_provider == "Google AI API":
                             dfd_mermaid = get_dfd_from_image_google(
-                                _dfd_api_key, selected_model, base64_image
+                                _dfd_api_key, selected_model, base64_image, media_type
                             )
                         else:
                             dfd_mermaid = ""
