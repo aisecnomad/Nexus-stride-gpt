@@ -4,6 +4,9 @@ All notable changes to STRIDE-GPT. Releases are cut from tags (see [RELEASING.md
 
 ## Unreleased
 
+- **Adversarial test suite for agent tools**: New `tests/test_adversarial_tools.py` covers path traversal, VCS metadata denial (including case variants and nested paths), symlink escapes, oversized and nested-quantifier grep patterns, evidence forgery, and planted prompt-injection comments. These lock in the sandbox and verification behaviour under hostile inputs.
+- **Formal threat model of STRIDE-GPT**: New `docs/threat-model.md` documents assets, trust boundaries, a STRIDE analysis of the CLI agent, core, and web UI, residual risks, and recommended operational controls (including an untrusted-codebase mode). Linked from the architecture and deployment-hardening guides.
+- **Deployment hardening language**: The shared web UI reference architecture now explicitly marks the identity-aware proxy, TLS termination, egress allow-list, and secrets-manager key injection as mandatory for any multi-user deployment.
 - **Quick-mode authorization:** Reference-only analysis now dispatches only packaged reference tools. Model-returned filesystem and unknown tool names are denied before execution, even if a provider returns a tool that was not advertised.
 - **Response parsing:** Valid JSON is parsed before any recovery. Comment and trailing-comma recovery respects quoted strings, preserving URLs and escapes; malformed object, threat, and suggestion shapes return explicit errors.
 - **Merge-policy configuration:** A reviewed `main` branch-protection payload requires lint, all three Python test checks, the security summary, an approving review, and resolved conversations. An administrator must activate it; committing the configuration does not enable GitHub protection.

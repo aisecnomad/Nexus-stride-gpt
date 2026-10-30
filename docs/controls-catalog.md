@@ -1246,11 +1246,11 @@ Controls for agents that act: inventory and ownership, least agency, agent ident
 
 ### AGT-01 · Agent inventory, named owner and assigned autonomy level
 
-**Objective.** Register every agent with a named accountable owner, purpose, autonomy level (L1-L4), tools, data scopes and credentials, and block agents that are unregistered or unowned.
+**Objective.** Register every agent with a named accountable owner, purpose, autonomy level (L0-L5), tools, data scopes and credentials, and block agents that are unregistered or unowned.
 
 **Guidance**
 
-- Govern agents as you would privileged accounts: keep a registry recording owner, business purpose, autonomy level (L1 human-as-operator to L4 human-as-auditor), model and version, tools and MCP servers, data scopes, credentials and environments.
+- Govern agents as you would privileged accounts: keep a registry recording owner, business purpose, autonomy level (L0 no-autonomy to L5 fully-autonomous), model and version, tools and MCP servers, data scopes, credentials and environments.
 - Deny runtime access to agents that are not registered or have no owner; retire agents together with their credentials so none are orphaned.
 - Derive the required controls from the autonomy level — higher autonomy needs stronger approval gates, isolation, monitoring and a tested kill switch.
 - Review the registry quarterly and whenever an agent gains tools, data or autonomy.

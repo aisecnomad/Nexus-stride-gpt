@@ -6,6 +6,8 @@ The configuration snippets are starting points. Adapt them to your environment a
 
 ## Threat model of STRIDE-GPT
 
+A more complete model of the tool itself (assets, trust boundaries, STRIDE table, residual risks, and recommended operational controls including an untrusted-codebase mode) is in [Threat model](threat-model.md). The summary below is retained for quick reference.
+
 | Threat | STRIDE | Controls |
 |--------|--------|----------|
 | The web UI has no built-in authentication, so anyone who can reach it can use it and spend the server's provider key | Spoofing, Denial of Service | IAM-01, IAM-02, NET-06, APP-08 |
@@ -30,6 +32,15 @@ Several of these are already mitigated in the code. The rest is configuration, c
 - **Container defaults.** The UI image runs as a non-root user, and `docker-compose.yml` binds its published port to loopback, drops all Linux capabilities, and sets `no-new-privileges` and resource limits.
 
 ## Reference architecture for a shared web UI
+
+**Mandatory for any deployment reachable by more than a single trusted operator:**
+
+- Place an identity-aware proxy (OIDC + phishing-resistant MFA) in front of the Streamlit process. The application itself has no authentication.
+- Terminate TLS 1.3 at the proxy; the application container should not be directly reachable from untrusted networks.
+- Enforce an egress allow-list limited to the chosen LLM provider (and GitHub API if used).
+- Inject provider API keys at runtime from a secrets manager or equivalent; never bake them into the image or commit them.
+
+The diagram below shows the intended layout.
 
 ```mermaid
 flowchart LR
