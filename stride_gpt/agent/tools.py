@@ -585,7 +585,7 @@ REPORTING_TOOLS: list[dict[str, Any]] = [
                         "enum": AUTONOMY_LEVELS,
                         "description": (
                             "Deployment archetype from the insider_threat card, L0 "
-                            "(no autonomy, pure tool) to L5 (fully autonomous, no "
+                            "(information only; humans execute actions) to L5 (fully autonomous, no "
                             "human in the loop)."
                         ),
                     },

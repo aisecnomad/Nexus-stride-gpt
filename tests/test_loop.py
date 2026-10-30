@@ -867,6 +867,12 @@ class TestSubsystemRunToolHandling:
         assert threat["autonomy_level"] == "L3"
         assert threat["MITRE_ATTACK"][0]["id"] == "T1190"
 
+    @pytest.mark.parametrize("level", ["L0", "L5"])
+    def test_endpoint_autonomy_levels_survive_recording(self, run, level):
+        result = run.handle(_report("r", autonomy_level=level))
+        assert result.startswith("Recorded threat #1")
+        assert run.threats[0]["autonomy_level"] == level
+
     def test_missing_scenario_is_refused(self, run):
         assert "non-empty 'scenario'" in run.handle(_report("r", scenario="  "))
         assert run.threats == []

@@ -67,11 +67,11 @@ flowchart LR
 
 ## Autonomy levels
 
-STRIDE-GPT classifies agentic systems into six autonomy levels, adapted from the CSA Agentic AI Autonomy Levels framework. Higher autonomy demands stronger controls.
+STRIDE-GPT uses a local six-level deployment taxonomy: the AI Insider Threat archetypes extended with L0 and L5. It is not a normative mapping to CSA's [autonomy proposal](https://cloudsecurityalliance.org/blog/2026/01/28/levels-of-autonomy); for example, CSA L2 means plan approval. Autonomy informs control selection alongside data sensitivity, permissions, impact and exposure.
 
 | Level | Archetype | Human role | Risk |
 |-------|-----------|------------|------|
-| **L0** | No Autonomy | AI is a deterministic tool; no planning or chaining | None |
+| **L0** | No Autonomy | Provides information or recommendations; humans execute external actions | Data, output and supply-chain risks remain |
 | **L1** | Human-as-Operator | Approves every action before it runs | Low |
 | **L2** | Human-as-Collaborator | Agent acts within scoped boundaries; some actions auto-approved | Medium |
 | **L3** | Human-as-Supervisor | Agent runs autonomously per task; human reviews outputs | High |
