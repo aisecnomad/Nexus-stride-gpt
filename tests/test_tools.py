@@ -623,7 +623,7 @@ class TestReportingTools:
         assert props["owasp_llm"]["enum"][0] == "LLM01"
         assert props["owasp_asi"]["enum"][-1] == "ASI10"
         assert "Data Exfiltration" in props["insider_category"]["enum"]
-        assert props["autonomy_level"]["enum"] == ["L1", "L2", "L3", "L4"]
+        assert props["autonomy_level"]["enum"] == ["L0", "L1", "L2", "L3", "L4", "L5"]
 
     def test_evidence_items_need_a_path_and_a_snippet(self):
         evidence = _reporting("report_threat")["parameters"]["properties"]["evidence"]

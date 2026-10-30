@@ -157,6 +157,7 @@ def render_markdown(report: AnalysisReport) -> str:
         )
     )
     lines.append(f"- **Cross-cutting threats**: {len(report.cross_cutting_threats)}")
+    lines.extend(_synthesis_summary_lines(report.metadata))
     if report.systemic_observations:
         lines.append(f"- **Systemic observations**: {len(report.systemic_observations)}")
     lines.extend(_synthesis_dropped_lines(report.metadata))
@@ -175,6 +176,13 @@ def render_markdown(report: AnalysisReport) -> str:
     lines.append("")
 
     return sanitize_markdown("\n".join(lines))
+
+
+def _synthesis_summary_lines(metadata: dict[str, Any]) -> list[str]:
+    error_class = metadata.get("synthesis_error_class")
+    if isinstance(error_class, str) and error_class:
+        return [f"- **Synthesis failed**: {error_class}"]
+    return []
 
 
 def _status_lines(outcome: str, error_class: str | None) -> list[str]:
@@ -749,6 +757,7 @@ def render_markdown_from_json(data: dict[str, Any]) -> str:
     lines.append(f"- **Total threats identified**: {total}")
     lines.extend(_subsystem_summary_lines(data.get("subsystems", [])))
     lines.append(f"- **Cross-cutting threats**: {len(cross_cutting)}")
+    lines.extend(_synthesis_summary_lines(metadata))
     if systemic:
         lines.append(f"- **Systemic observations**: {len(systemic)}")
     lines.extend(_synthesis_dropped_lines(metadata))

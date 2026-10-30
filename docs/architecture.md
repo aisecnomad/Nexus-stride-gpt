@@ -1,6 +1,6 @@
 # Architecture
 
-STRIDE-GPT is one Python library with two front ends. This page describes how the pieces fit together, how data moves between them, where the trust boundaries are, and where to extend the system. [AGENTS.md](../AGENTS.md) holds contributor-level detail: the progressive-disclosure pattern, provider quirks, and what not to do.
+STRIDE-GPT is one Python library with two front ends. This page describes how the pieces fit together, how data moves between them, where the trust boundaries are, and where to extend the system. [AGENTS.md](../AGENTS.md) holds contributor-level detail: the progressive-disclosure pattern, provider quirks, and what not to do. A formal threat model of the tool itself is in [Threat model](threat-model.md).
 
 ## Components
 
