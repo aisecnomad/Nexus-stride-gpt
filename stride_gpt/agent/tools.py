@@ -485,7 +485,7 @@ INSIDER_CATEGORIES = [
     "Infrastructure Sabotage",
     "Deception & Evasion",
 ]
-AUTONOMY_LEVELS = ["L1", "L2", "L3", "L4"]
+AUTONOMY_LEVELS = ["L0", "L1", "L2", "L3", "L4", "L5"]
 # Every control ID in the catalogue. An enum rather than a free string so
 # providers that enforce tool schemas can't accept an invented ID; the loop
 # still filters what arrives, for the ones that don't.
@@ -584,8 +584,9 @@ REPORTING_TOOLS: list[dict[str, Any]] = [
                         "type": "string",
                         "enum": AUTONOMY_LEVELS,
                         "description": (
-                            "Deployment archetype from the insider_threat card, L1 "
-                            "(human approves every action) to L4 (continuous autonomy)."
+                            "Deployment archetype from the insider_threat card, L0 "
+                            "(information only; humans execute actions) to L5 (fully autonomous, no "
+                            "human in the loop)."
                         ),
                     },
                     "mitre_attack": {
