@@ -59,11 +59,13 @@ Below are the per-subsystem STRIDE threat findings. Each threat has an "id", and
 
 Report what spans subsystems. Every item you output is one of two kinds, and you must say which:
 
-1. "aggregation" — the same weakness, or the same kind of weakness, that subsystems have already reported, restated as a systemic pattern. Example: three subsystems each report missing authentication, so you note that the system has no authentication anywhere. An aggregation adds no new finding; it tells the reader the existing ones are systemic. It must list the ids of the subsystem threats it summarises in "Related Threats". It carries no evidence.
+1. "aggregation" — the same kind of weakness, reported separately by several subsystems, restated as a systemic pattern. Example: three subsystems each report missing authentication, so you note that the system has no authentication anywhere. An aggregation adds no new finding; it tells the reader the existing ones are systemic. It must list the ids of the subsystem threats it summarises in "Related Threats". It carries no evidence.
 
-2. "emergent" — a threat that exists only in the interaction between subsystems and that no single subsystem could have found alone. Example: data flows between two components without encryption, although each component looks fine on its own. It must cite "evidence": code that shows the weakness, copied exactly from the evidence in the findings below. Do not invent snippets or cite code you were not shown. If you cannot cite evidence for it, do not report it.
+2. "emergent" — a threat that exists only in the interaction between subsystems. Either each component looks fine on its own, or weaknesses in different subsystems combine into an attack path that no single subsystem reported as a whole. Example: one subsystem writes user-supplied file names into a shared directory, and another runs every script it finds there, so together they give an outside user code execution in the second. It must cite "evidence": code that shows the weakness, copied exactly from the evidence in the findings below. Do not invent snippets or cite code you were not shown. If you cannot cite evidence for it, do not report it.
 
-Do not report an emergent threat that merely restates a subsystem threat. If a subsystem already found it, it is an aggregation. When in doubt, choose aggregation.
+A chain whose steps different subsystems reported separately is emergent, not an aggregation: the path from one subsystem into another is the new finding. Cite evidence for each step and list the step threats' ids in "Related Threats". Report each chain once, as an emergent threat only.
+
+Do not report an emergent threat that restates a threat one subsystem already reported in full. When a pattern repeats across subsystems but no step leads into another subsystem, it is an aggregation.
 
 Respond with a JSON object:
 {
@@ -343,24 +345,38 @@ def run_analysis(
     # --- Phase 3: Synthesis ---
     cross_cutting: list[dict[str, Any]] = []
     systemic: list[dict[str, Any]] = []
+    synthesis_error_class: str | None = None
     synthesis_dropped: list[dict[str, str]] = []
     if len(analysed) > 1:
         progress.phase_start("Phase 3", "Synthesizing Cross-Cutting Threats")
         progress.status("Identifying cross-cutting threats...")
         synth_counts = {"llm": 0}
         synth_notes: dict[str, bool] = {}
-        raw_synthesis = _synthesize(
-            models, analysed, usage=phase_usage["synthesis"], call_counts=synth_counts,
-            notes=synth_notes,
-        )
-        llm_calls += synth_counts["llm"]
-        cross_cutting, systemic = classify_synthesis(
-            raw_synthesis, analysed, target_path, dropped=synthesis_dropped,
-            evidence_stripped=synth_notes.get("evidence_stripped", False),
-        )
-        if systemic:
-            progress.status(f"Noted {len(systemic)} systemic observations (not counted as threats)")
-        progress.synthesis_done(len(cross_cutting))
+        try:
+            raw_synthesis = _synthesize(
+                models, analysed, usage=phase_usage["synthesis"], call_counts=synth_counts,
+                notes=synth_notes,
+            )
+        except Exception as exc:
+            synthesis_error_class = type(exc).__name__
+            error_class, reason = classify_error(exc)
+            # A provider error explains itself. Anything else is likely a bug
+            # in synthesis, and its traceback is all there is to debug from.
+            logger.warning(
+                "Synthesis failed (%s)", synthesis_error_class,
+                exc_info=error_class == "unexpected",
+            )
+            progress.synthesis_failed(reason)
+        else:
+            cross_cutting, systemic = classify_synthesis(
+                raw_synthesis, analysed, target_path, dropped=synthesis_dropped,
+                evidence_stripped=synth_notes.get("evidence_stripped", False),
+            )
+            if systemic:
+                progress.status(f"Noted {len(systemic)} systemic observations (not counted as threats)")
+            progress.synthesis_done(len(cross_cutting))
+        finally:
+            llm_calls += synth_counts["llm"]
 
     # --- Phase 4: System-level DFD ---
     # Optional pass — gives the report a visual map of components and trust
@@ -381,6 +397,8 @@ def run_analysis(
     )
     metadata["references_loaded"] = sorted(loaded_refs)
     metadata["token_usage"] = _token_usage_metadata(phase_usage)
+    if synthesis_error_class is not None:
+        metadata["synthesis_error_class"] = synthesis_error_class
     metadata["synthesis_dropped"] = synthesis_dropped
 
     assign_threat_ids(findings, cross_cutting)

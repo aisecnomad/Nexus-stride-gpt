@@ -1,0 +1,127 @@
+name: Nexus upstream sync
+
+# Keeps upstream-master an exact mirror of upstream's master, then opens a
+# pull request that merges new upstream commits into main.
+#
+# Runs on GITHUB_TOKEN by default. That token can't push commits that touch
+# .github/workflows/, and pull requests it opens don't trigger CI. An optional
+# NEXUS_SYNC_TOKEN secret on the upstream-sync environment lifts both limits.
+# Keep it an environment secret restricted to main, never a repository
+# secret: docs/nexus-workflow.md ("Syncing with upstream") explains why.
+
+on:
+  schedule:
+    - cron: '41 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: nexus-upstream-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_URL: https://github.com/mrwadams/stride-gpt.git
+  UPSTREAM_BRANCH: master
+  MIRROR_BRANCH: upstream-master
+  INTEGRATION_BRANCH: main
+
+jobs:
+  sync:
+    name: Sync with upstream
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Holds NEXUS_SYNC_TOKEN. GitHub creates the environment, empty, on first run.
+    environment: upstream-sync
+    steps:
+      - name: Checkout the mirror
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.MIRROR_BRANCH }}
+          fetch-depth: 0
+          token: ${{ secrets.NEXUS_SYNC_TOKEN || github.token }}
+
+      - name: Fast-forward the mirror to upstream
+        env:
+          HAS_SYNC_TOKEN: ${{ secrets.NEXUS_SYNC_TOKEN != '' }}
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags "$UPSTREAM_URL" \
+            "+refs/heads/${UPSTREAM_BRANCH}:refs/remotes/upstream/${UPSTREAM_BRANCH}"
+          upstream="upstream/${UPSTREAM_BRANCH}"
+
+          read -r ahead behind < <(git rev-list --left-right --count "HEAD...${upstream}")
+
+          if (( ahead > 0 )); then
+            echo "::error title=${MIRROR_BRANCH} has diverged from upstream::${MIRROR_BRANCH} has ${ahead} commit(s) that upstream doesn't. It must stay an exact mirror: move those commits to a branch, then reset ${MIRROR_BRANCH} to upstream."
+            exit 1
+          fi
+
+          if (( behind == 0 )); then
+            echo "\`${MIRROR_BRANCH}\` already matches upstream." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # GITHUB_TOKEN may not push a commit that touches a workflow file, even
+          # one later reverted, so check every incoming commit rather than the
+          # end-state diff.
+          workflows="$(git log --format= --name-only "HEAD..${upstream}" -- .github/workflows | awk 'NF' | sort -u | paste -sd, -)"
+          if [[ -n "$workflows" && "$HAS_SYNC_TOKEN" != "true" ]]; then
+            echo "::error title=Upstream changed workflow files::GITHUB_TOKEN can't push changes to ${workflows}. Update the mirror by hand (git fetch upstream, then git push origin upstream/master:${MIRROR_BRANCH}) or add NEXUS_SYNC_TOKEN. See docs/nexus-workflow.md."
+            exit 1
+          fi
+
+          old="$(git rev-parse --short HEAD)"
+          git merge --ff-only "$upstream"
+          git push origin "HEAD:refs/heads/${MIRROR_BRANCH}"
+          echo "Fast-forwarded \`${MIRROR_BRANCH}\` by ${behind} commit(s): \`${old}\` → \`$(git rev-parse --short HEAD)\`." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open a sync pull request into main
+        env:
+          GH_TOKEN: ${{ secrets.NEXUS_SYNC_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags origin \
+            "+refs/heads/${INTEGRATION_BRANCH}:refs/remotes/origin/${INTEGRATION_BRANCH}"
+
+          # A squashed sync or history-link pull request leaves main with no
+          # commits in common with the mirror. A sync can't merge then.
+          if ! git merge-base "origin/${INTEGRATION_BRANCH}" HEAD > /dev/null; then
+            echo "::error title=${INTEGRATION_BRANCH} isn't linked to upstream's history::${INTEGRATION_BRANCH} shares no commits with ${MIRROR_BRANCH}, so a sync can't merge. See \"If main falls out of step with upstream's history\" in docs/nexus-workflow.md."
+            exit 1
+          fi
+
+          pending="$(git rev-list --count "origin/${INTEGRATION_BRANCH}..HEAD")"
+
+          if (( pending == 0 )); then
+            echo "\`${INTEGRATION_BRANCH}\` already contains \`${MIRROR_BRANCH}\`." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          existing="$(gh pr list --base "$INTEGRATION_BRANCH" --head "$MIRROR_BRANCH" --state open --json url --jq '.[0].url // empty')"
+          if [[ -n "$existing" ]]; then
+            echo "Sync pull request already open, ${pending} commit(s) pending: ${existing}" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          body="$(cat <<EOF
+          Brings ${pending} upstream commit(s) from \`${MIRROR_BRANCH}\` into \`${INTEGRATION_BRANCH}\`.
+
+          - Merge with **Create a merge commit**. Squash or rebase would cut \`${INTEGRATION_BRANCH}\` off from upstream's history, and later syncs would conflict.
+          - Resolve conflicts in upstream's favour unless a Nexus change deliberately diverges, and say so in a comment.
+          - No checks running? Pull requests opened with \`GITHUB_TOKEN\` don't trigger workflows. Close and reopen this one to start CI.
+          EOF
+          )"
+
+          if url="$(gh pr create --base "$INTEGRATION_BRANCH" --head "$MIRROR_BRANCH" \
+              --title "Sync upstream ${UPSTREAM_BRANCH} into ${INTEGRATION_BRANCH}" \
+              --body "$body" 2>&1)"; then
+            echo "Opened sync pull request: ${url}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning title=Couldn't open the sync pull request::${url}"
+            echo "Open it by hand: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${INTEGRATION_BRANCH}...${MIRROR_BRANCH}" >> "$GITHUB_STEP_SUMMARY"
+          fi

@@ -1,0 +1,67 @@
+name: Improvement
+description: Propose a change to STRIDE-GPT, for upstream or for this repository only.
+title: "<area>: <short summary>"
+labels: ["improvement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Found a vulnerability?** Don't file it here: this repository is public. The [Security section](https://github.com/aisecnomad/Nexus-stride-gpt/blob/main/docs/nexus-workflow.md#security) of the workflow guide explains where to report privately.
+  - type: dropdown
+    id: lane
+    attributes:
+      label: Where should this land?
+      description: If you're unsure, pick upstream. docs/nexus-workflow.md explains the lanes.
+      options:
+        - Upstream (contrib/*)
+        - This repository only (feat/* or fix/*)
+        - Not sure yet
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - CLI and REPL
+        - Agentic analysis engine
+        - Prompts and reference cards
+        - Controls and compliance mapping
+        - LLM providers and models
+        - Reports and output formats
+        - Streamlit web UI
+        - Tests
+        - CI, packaging and supply chain
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What's wrong or missing today? Show evidence where you can, such as file:line references, CLI output or a sample report.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What would you change, and how will we know it worked? Name the tests, sample output or measurement.
+    validations:
+      required: true
+  - type: textarea
+    id: related
+    attributes:
+      label: Related upstream issues or pull requests
+      description: Links to anything related in mrwadams/stride-gpt.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you submit
+      options:
+        - label: I searched upstream issues and pull requests for this idea.
+          required: true
+        - label: This issue contains no secrets and no details of an undisclosed vulnerability.
+          required: true

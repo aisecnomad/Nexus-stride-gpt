@@ -9,7 +9,7 @@
   <a href="LICENSE-MIT"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
-> **About this repository.** Nexus-stride-gpt is where we collaborate on enhancements to [mrwadams/stride-gpt](https://github.com/mrwadams/stride-gpt). It holds a snapshot of upstream commit [`8e9fb82`](https://github.com/mrwadams/stride-gpt/commit/8e9fb82a3c99878ec92efa86ab5e704e681f2105) (27 October 2026), followed by the enhancement commits listed under *Unreleased* in the [changelog](CHANGELOG.md). STRIDE GPT is &copy; Matt Adams and released under the MIT License; see [License](#license).
+> **About this repository.** Nexus-stride-gpt is where we collaborate on enhancements to [mrwadams/stride-gpt](https://github.com/mrwadams/stride-gpt). It holds STRIDE GPT with upstream's full git history, kept in sync with upstream's `master` (the [workflow guide](docs/nexus-workflow.md) explains how), plus the enhancement commits listed under *Unreleased* in the [changelog](CHANGELOG.md). STRIDE GPT is &copy; Matt Adams and released under the MIT License; see [License](#license).
 
 AI-powered STRIDE threat modelling. Point it at a codebase or describe an application &mdash; get a threat model with verified code evidence, OWASP/MITRE annotations, 69 security controls, and compliance mapping to **AIUC-1**, **ISO 42001**, **ISO 27001** and the **EU AI Act**.
 

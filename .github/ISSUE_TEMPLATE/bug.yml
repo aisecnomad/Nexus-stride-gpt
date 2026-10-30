@@ -1,0 +1,61 @@
+name: Bug
+description: Something in STRIDE-GPT or this repository doesn't work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Security issue?** Don't file it here: this repository is public. The [Security section](https://github.com/aisecnomad/Nexus-stride-gpt/blob/main/docs/nexus-workflow.md#security) of the workflow guide explains where to report privately.
+
+        If the bug also happens on upstream `master`, report it [upstream](https://github.com/mrwadams/stride-gpt/issues) as well and link it below.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: The exact command or steps, and the full output. Redact API keys.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where?
+      options:
+        - CLI (stride-gpt)
+        - Streamlit web UI
+        - CI or tooling
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Output of `stride-gpt --version`, or the commit SHA you ran.
+    validations:
+      required: true
+  - type: input
+    id: models
+    attributes:
+      label: Models
+      description: The worker and architect models you used (`--worker-model`, `--architect-model`, or your saved config).
+  - type: dropdown
+    id: upstream
+    attributes:
+      label: Does it happen on upstream master too?
+      options:
+        - "Yes"
+        - "No, only here"
+        - "Haven't checked"
+    validations:
+      required: true
+  - type: input
+    id: upstream-issue
+    attributes:
+      label: Upstream issue
+      description: Link, if you reported it upstream.
