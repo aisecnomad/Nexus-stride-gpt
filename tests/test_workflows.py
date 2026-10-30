@@ -55,7 +55,8 @@ def test_protection_configuration_requires_existing_check_names():
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="GitHub's gate runs in Bash")
 @pytest.mark.parametrize("event,dependency,docker,changed,result,success", [
-    ("pull_request", "success", "skipped", None, None, True),
+    ("pull_request", "success", "success", None, None, True),
+    ("pull_request", "success", "skipped", None, None, False),
     ("push", "skipped", "success", None, None, True),
     ("workflow_dispatch", "skipped", "success", None, None, True),
     ("schedule", "skipped", "skipped", None, None, True),
@@ -99,3 +100,16 @@ def test_container_scan_fails_on_actionable_vulnerabilities():
     job = _workflow("security.yml")["jobs"]["docker-security"]
     gate = next(step for step in job["steps"] if step.get("name") == "Run Trivy in table format")
     assert gate["with"]["exit-code"] == "1"
+    assert "'pull_request'" in job["if"]
+    checkout = next(step for step in job["steps"] if step.get("name") == "Checkout code")
+    assert checkout["with"]["persist-credentials"] == "false"
+
+
+def test_runtime_image_excludes_build_only_uv_and_smoke_checks_imports():
+    image = (ROOT / "Dockerfile.ui").read_text()
+    assert "pip uninstall --yes uv" in image
+    job = _workflow("security.yml")["jobs"]["docker-security"]
+    smoke = next(step for step in job["steps"] if step.get("name") == "Verify runtime imports and exclude build tools")
+    assert "docker run --rm" in smoke["run"]
+    assert 'import streamlit' in smoke["run"]
+    assert 'find_spec("uv") is None' in smoke["run"]

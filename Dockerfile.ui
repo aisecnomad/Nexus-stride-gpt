@@ -37,7 +37,9 @@ RUN ${VIRTUAL_ENV}/bin/pip install --no-cache-dir --upgrade pip uv && \
     ${VIRTUAL_ENV}/bin/uv export --frozen --no-dev --no-emit-project \
         -o /tmp/requirements.lock && \
     ${VIRTUAL_ENV}/bin/pip install --no-cache-dir --require-hashes -r /tmp/requirements.lock && \
-    ${VIRTUAL_ENV}/bin/pip check
+    ${VIRTUAL_ENV}/bin/pip check && \
+    ${VIRTUAL_ENV}/bin/pip uninstall --yes uv && \
+    rm -f /tmp/requirements.lock
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=4).status == 200 else 1)" || exit 1
