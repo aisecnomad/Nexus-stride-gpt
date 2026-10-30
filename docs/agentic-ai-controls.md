@@ -16,11 +16,11 @@ Agents that aren't registered, or have no owner, are denied at runtime. Retire a
 
 ## Autonomy levels
 
-STRIDE-GPT uses six deployment archetypes, extending the AI Insider Threat model with L0 (no autonomy) and L5 (fully autonomous):
+STRIDE-GPT uses a local six-level deployment taxonomy, extending the AI Insider Threat model with L0 and L5. This is not a normative mapping to CSA's [autonomy proposal](https://cloudsecurityalliance.org/blog/2026/01/28/levels-of-autonomy): CSA L2 means approval of a plan, whereas the local L2 archetype describes scoped auto-approved actions. Record the taxonomy and version with any assessment; do not interchange level numbers across frameworks.
 
 | Level | Archetype | Human role | Risk |
 |-------|-----------|------------|------|
-| **L0** | No Autonomy | Pure tool: no decision-making, planning or chaining | None; no insider threat surface |
+| **L0** | No Autonomy | Information or recommendations only; humans execute external actions | Data disclosure, unsafe outputs and supply-chain risks remain |
 | **L1** | Human-as-Operator | Approves every action before it runs | Low; the residual risk is reviewer fatigue |
 | **L2** | Human-as-Collaborator | Agent acts within scoped boundaries; some actions are auto-approved | Medium; auto-approved actions are the soft underbelly |
 | **L3** | Human-as-Supervisor | Agent runs autonomously per task; a human reviews outputs, not actions | High |
@@ -29,28 +29,30 @@ STRIDE-GPT uses six deployment archetypes, extending the AI Insider Threat model
 
 ## A baseline by autonomy level
 
-Risk scales steeply with autonomy, so control strength should too. The table below is STRIDE-GPT's suggested baseline, not a requirement of any one standard. ● = expected, ○ = recommended, — = rarely needed.
+Autonomy is one risk dimension; privileges, data sensitivity, exposure and consequence reversibility also determine control strength. The table below is STRIDE-GPT's suggested agent-specific baseline, not a requirement of any one standard or an assurance of safety. ● = expected, ○ = recommended, — = generally inapplicable to that archetype. All levels still need the applicable identity, access, data-protection, application-security, supply-chain and logging controls from the full catalogue.
 
 | Control | L0 | L1 | L2 | L3 | L4 | L5 |
 |---------|----|----|----|----|----|----|
-| [AGT-01](controls-catalog.md#agt-01) Inventory, named owner, autonomy level | ○ | ● | ● | ● | ● | ● |
+| [AGT-01](controls-catalog.md#agt-01) Inventory, named owner, autonomy level | ● | ● | ● | ● | ● | ● |
 | [AGT-02](controls-catalog.md#agt-02) Least-agency design | — | ● | ● | ● | ● | ● |
-| [AGT-03](controls-catalog.md#agt-03) Distinct, verifiable agent identity | — | ○ | ● | ● | ● | ● |
-| [AGT-04](controls-catalog.md#agt-04) Task-scoped, short-lived, delegated credentials | — | ○ | ● | ● | ● | ● |
+| [AGT-03](controls-catalog.md#agt-03) Distinct, verifiable agent identity | ○ | ○ | ● | ● | ● | ● |
+| [AGT-04](controls-catalog.md#agt-04) Task-scoped, short-lived, delegated credentials | ○ | ○ | ● | ● | ● | ● |
 | [AGT-05](controls-catalog.md#agt-05) Tool allow-listing, policy-enforced calls | — | ● | ● | ● | ● | ● |
-| [AGT-06](controls-catalog.md#agt-06) Tool and MCP supply-chain integrity | — | ● | ● | ● | ● | ● |
-| [AGT-07](controls-catalog.md#agt-07) Human approval for high-impact actions | — | every action | ● | ● | ● | ● autonomous safeguards |
-| [AGT-08](controls-catalog.md#agt-08) Sandboxed, ephemeral execution | — | ○ | ● | ● | ● | ● hardened |
-| [AGT-09](controls-catalog.md#agt-09) Memory and context integrity | — | ○ | ○ | ● | ● | ● |
+| [AGT-06](controls-catalog.md#agt-06) Tool and MCP supply-chain integrity | ○ | ● | ● | ● | ● | ● |
+| [AGT-07](controls-catalog.md#agt-07) Human approval for high-impact actions | — | every action | ● | ● | ● | human approval or prohibit action |
+| [AGT-08](controls-catalog.md#agt-08) Sandboxed, ephemeral execution | ○ | ○ | ● | ● | ● | ● hardened |
+| [AGT-09](controls-catalog.md#agt-09) Memory and context integrity | ○ | ○ | ○ | ● | ● | ● |
 | [AGT-10](controls-catalog.md#agt-10) Authenticated inter-agent communication (multi-agent only) | — | ○ | ● | ● | ● | ● mutual attestation |
-| [AGT-11](controls-catalog.md#agt-11) Action-level, tamper-evident audit trail | — | ● | ● | ● | ● | ● immutable |
+| [AGT-11](controls-catalog.md#agt-11) Action-level, tamper-evident audit trail | ○ | ● | ● | ● | ● | ● immutable |
 | [AGT-12](controls-catalog.md#agt-12) Behavioural monitoring and canaries | — | — | ○ | ● | ● | ● continuous |
 | [AGT-13](controls-catalog.md#agt-13) Kill switch and rapid containment | — | ○ | ● | ● | ● drilled | ● drilled + autonomous failsafe |
 | [AGT-14](controls-catalog.md#agt-14) Execution budgets and circuit breakers | — | ○ | ● | ● | ● | ● |
-| [AI-01](controls-catalog.md#ai-01) Prompt-injection defences | — | ● | ● | ● | ● | ● |
-| [AI-07](controls-catalog.md#ai-07) Adversarial testing and red teaming | — | ○ | ● | ● | ● independent | ● independent + continuous |
+| [AI-01](controls-catalog.md#ai-01) Prompt-injection defences | ● | ● | ● | ● | ● | ● |
+| [AI-07](controls-catalog.md#ai-07) Adversarial testing and red teaming | ○ | ○ | ● | ● | ● independent | ● independent + continuous |
 
-Three rules of thumb follow from the table. First, **L0 (pure tools) need only inventory** — they have no agency to govern. Second, **every level from L1 upward needs AGT-01, AGT-02, AGT-05, AGT-06 and AGT-11**: know the agent, constrain it, govern its tools and record what it does. Third, **from L3 upward, assume the agent will at some point act against your interests** — through prompt injection, a poisoned tool, or misalignment — and make sure you would detect it (AGT-12) and could stop it (AGT-13). **At L5, the agent has no human guardrail**: every control must be self-enforcing, with autonomous failsafes and immutable audit trails that survive the agent's own attempts to modify them.
+**L0 is not risk-free.** Information-only AI still needs input/output validation, data minimization and access controls, dependency/model provenance, appropriate audit records and adversarial evaluation. Apply AI-01 when an LLM consumes untrusted instructions or content; credential and runtime controls apply whenever the service has credentials or executes code. A single-function tool that performs external actions is not automatically L0.
+
+**From L1 upward**, inventory, tool policy, supply-chain integrity and attributable action logs remain expected. From L3 upward, plan for compromised or misaligned behavior and verify detection and containment. **L5 is a research endpoint, not a deployment recommendation**: a table of safeguards cannot establish that self-directed operation is safe. Actions requiring human authorization must retain that gate or be prohibited, even if this reduces effective autonomy.
 
 ## The controls, by what they stop
 

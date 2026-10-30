@@ -71,6 +71,9 @@ jobs:
             exit 0
           fi
 
+          # The summary is copy-pasted into a shell too. Quote the branch for
+          # that second evaluation, including valid refs containing $ or ;.
+          printf -v quoted_head '%q' "$HEAD_REF"
           {
             echo "## Lane guard failed"
             echo
@@ -85,8 +88,8 @@ jobs:
             echo '```bash'
             echo 'git fetch upstream'
             echo 'git fetch origin'
-            echo "git rebase --onto upstream/master origin/main $HEAD_REF"
-            echo "git push --force-with-lease origin $HEAD_REF"
+            echo "git rebase --onto upstream/master origin/main $quoted_head"
+            echo "git push --force-with-lease origin $quoted_head"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           echo "::error title=Lane guard::This contrib/* branch carries Nexus-only files. The job summary shows how to fix it."

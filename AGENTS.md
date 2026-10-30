@@ -11,6 +11,8 @@ STRIDE-GPT is an AI-powered threat modelling tool that produces STRIDE reports f
 
 Both surfaces share `stride_gpt/core/` for prompts, schemas, and the LLM abstraction.
 
+A formal threat model of the tool itself (assets, trust boundaries, STRIDE analysis, residual risks, and recommended operational controls including an untrusted-codebase mode) is in [docs/threat-model.md](docs/threat-model.md).
+
 ## Repository layout
 
 ```

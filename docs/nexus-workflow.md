@@ -152,7 +152,7 @@ git push origin fix/relink-upstream
 ### One-time repository settings
 
 1. **Rulesets** (Settings → Rules → Rulesets), each with an empty bypass list:
-   - `upstream-master`: block force pushes, restrict deletions, require linear history.
+   - `upstream-master`: block force pushes and restrict deletions. Do not require linear history: the exact mirror must retain upstream's merge commits, and that rule would reject a fast-forward that brings in a new merge commit.
    - `main`: require a pull request (one approval once there are two or more maintainers); require the status checks `Lint (ruff)`, `Test (Python 3.12)`, `Test (Python 3.13)`, `Test (Python 3.14)` and `Lane guard`; block force pushes; restrict deletions. Don't require linear history: sync pull requests need merge commits.
 2. **Merge options** (Settings → General → Pull Requests): keep **Allow merge commits** on.
 3. **Release workflow**: Actions → *Release* → **⋯** → **Disable workflow**. It publishes upstream's PyPI package and Docker image, which can't succeed from here and shouldn't be attempted.
