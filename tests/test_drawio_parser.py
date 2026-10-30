@@ -145,15 +145,11 @@ class TestDrawioToPromptSection:
 
 
 def test_oversized_xml_is_rejected_before_parsing(monkeypatch):
-    import stride_gpt.core.drawio_parser as parser
-
-    monkeypatch.setattr(parser, "MAX_DRAWIO_CHARS", len(FLAT_XML) - 1)
-    monkeypatch.setattr(parser, "_safe_fromstring", lambda _xml: pytest.fail("parsed oversized XML"))
-    assert parser.drawio_to_prompt_section(FLAT_XML) == ""
+    monkeypatch.setattr("stride_gpt.core.drawio_parser.MAX_DRAWIO_CHARS", len(FLAT_XML) - 1)
+    monkeypatch.setattr("stride_gpt.core.drawio_parser._safe_fromstring", lambda _xml: pytest.fail("parsed oversized XML"))
+    assert drawio_to_prompt_section(FLAT_XML) == ""
 
 
 def test_excessive_cell_count_rejects_whole_diagram(monkeypatch):
-    import stride_gpt.core.drawio_parser as parser
-
-    monkeypatch.setattr(parser, "MAX_DRAWIO_CELLS", 2)
-    assert parser.drawio_to_prompt_section(FLAT_XML) == ""
+    monkeypatch.setattr("stride_gpt.core.drawio_parser.MAX_DRAWIO_CELLS", 2)
+    assert drawio_to_prompt_section(FLAT_XML) == ""

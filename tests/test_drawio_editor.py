@@ -33,7 +33,10 @@ def test_unsafe_or_ambiguous_editor_url_is_rejected(monkeypatch, origin):
 @pytest.mark.skipif(shutil.which("node") is None, reason="Browser message harness needs Node")
 def test_iframe_messages_require_exact_window_and_origin():
     frontend = Path(__file__).parents[1] / "apps/web/components/drawio_editor/frontend/index.html"
-    script = re.search(r"<script>(.*?)</script>", frontend.read_text(), re.DOTALL).group(1)
+    # Extract the trusted fixture's inline script; this is not an HTML sanitizer.
+    match = re.search(r"<script>(.*?)</script>", frontend.read_text(), re.DOTALL | re.IGNORECASE)
+    assert match is not None
+    script = match.group(1)
     harness = r'''
 const fs = require("fs");
 const vm = require("vm");
