@@ -25,6 +25,8 @@ dependencies = [
     "rich>=13.0",
     "prompt_toolkit>=3.0",
     "defusedxml>=0.7.1",
+    "regex>=2024.11.6",
+    "markdown-it-py>=3.0",
 ]
 
 [project.urls]

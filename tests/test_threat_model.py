@@ -8,6 +8,10 @@ a structured error rather than raising into the caller.
 
 from __future__ import annotations
 
+import json
+
+import pytest
+
 from stride_gpt.core.threat_model import (
     _clean_json_content,
     _parse_threat_model_response,
@@ -58,6 +62,40 @@ class TestParseThreatModelResponse:
         assert parsed.threat_model == []
         assert parsed.improvement_suggestions == []
 
+    @pytest.mark.parametrize("value", [
+        [], None, "text", 1,
+        {"threat_model": None},
+        {"threat_model": "not an array"},
+        {"threat_model": [None]},
+        {"threat_model": ["not an object"]},
+        {"threat_model": [{"Threat Type": "Spoofing"}]},
+        {"threat_model": [{"Threat Type": "Spoofing", "Scenario": [], "Potential Impact": "i"}]},
+        {"improvement_suggestions": "not an array"},
+        {"improvement_suggestions": [None]},
+    ])
+    def test_wrong_json_shapes_return_explicit_errors(self, value):
+        parsed = _parse_threat_model_response(json.dumps(value))
+        assert parsed.threat_model[0]["Threat Type"] == "Error"
+        assert any("JSON schema error" in item for item in parsed.improvement_suggestions)
+
+    @pytest.mark.parametrize("scenario", [
+        "Requests to https://example.com/api expose data",
+        'A quoted \\"value\\" and // ordinary string text',
+        "Example code: ```json\\n[1,\\n]\\n```",
+        "A backslash before a URL: \\" + "https://example.com/api",
+        "https://example.com/a?one=1&two=2 // text ending at EOF",
+    ])
+    def test_valid_json_preserves_urls_escapes_and_fences(self, scenario):
+        content = json.dumps({
+            "threat_model": [{"Threat Type": "Information Disclosure", "Scenario": scenario,
+                              "Potential Impact": "i"}],
+            "improvement_suggestions": ["Use https://example.com/docs"],
+        }, indent=2)
+        parsed = _parse_threat_model_response(content)
+        assert parsed.threat_model[0]["Scenario"] == scenario
+        assert parsed.improvement_suggestions == ["Use https://example.com/docs"]
+        assert _clean_json_content(content) == content
+
 
 class TestCleanJsonContent:
     def test_strips_json_fence(self):
@@ -75,11 +113,30 @@ class TestCleanJsonContent:
         assert ",\n]" not in cleaned
 
     def test_fenced_json_with_comment_becomes_parseable(self):
-        import json
-
         raw = '```json\n{"threat_model": [], // note\n"improvement_suggestions": []}\n```'
         cleaned = _clean_json_content(raw)
         assert json.loads(cleaned) == {
             "threat_model": [],
             "improvement_suggestions": [],
+        }
+
+    def test_recovery_preserves_quoted_urls_and_comment_markers(self):
+        raw = '''```json
+{
+  "threat_model": [{
+    "Threat Type": "Spoofing", // model note
+    "Scenario": "Visit https://example.com/ and read // comments",
+    "Potential Impact": "i",
+  },],
+  "improvement_suggestions": ["Keep https://example.com/docs",],
+} // final comment
+```'''
+        parsed = _parse_threat_model_response(raw)
+        assert parsed.threat_model[0]["Scenario"] == "Visit https://example.com/ and read // comments"
+        assert parsed.improvement_suggestions == ["Keep https://example.com/docs"]
+
+    def test_json_string_fences_are_not_removed_during_recovery(self):
+        raw = '{"example": "```json {\\"a\\":1} ```", "url": "https://example.com",}'
+        assert json.loads(_clean_json_content(raw)) == {
+            "example": '```json {"a":1} ```', "url": "https://example.com",
         }

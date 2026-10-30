@@ -11,10 +11,12 @@
 
 > **About this repository.** Nexus-stride-gpt is where we collaborate on enhancements to [mrwadams/stride-gpt](https://github.com/mrwadams/stride-gpt). It holds STRIDE GPT with upstream's full git history, kept in sync with upstream's `master` (the [workflow guide](docs/nexus-workflow.md) explains how), plus the enhancement commits listed under *Unreleased* in the [changelog](CHANGELOG.md). STRIDE GPT is &copy; Matt Adams and released under the MIT License; see [License](#license).
 
-AI-powered STRIDE threat modelling. Point it at a codebase or describe an application &mdash; get a threat model with verified code evidence, OWASP/MITRE annotations, 69 security controls, and compliance mapping to **AIUC-1**, **ISO 42001**, **ISO 27001** and the **EU AI Act**.
+AI-powered STRIDE threat modelling. Point it at a codebase or describe an application &mdash; get a threat model with source-matched evidence, OWASP/MITRE annotations, 69 security controls, and compliance mapping to **AIUC-1**, **ISO 42001**, **ISO 27001** and the **EU AI Act**.
+
+For the Nexus enhancements, install from [source](#from-source-cli--web-ui). Published PyPI and Docker packages are upstream releases.
 
 ```bash
-pip install stride-gpt
+pip install -e .  # after cloning this repository
 export ANTHROPIC_API_KEY=your-key        # or OPENAI_API_KEY, GOOGLE_API_KEY, ...
 stride-gpt analyze ./my-app -o report.md # agentic codebase analysis
 stride-gpt quick -i description.txt      # single-shot from text
@@ -59,7 +61,7 @@ flowchart LR
 ```
 
 1. **Plan.** Architect model classifies the codebase and proposes 3&ndash;7 subsystems.
-2. **Explore.** Per-subsystem agent reads files, greps, and loads only the reference cards it needs (OWASP, MITRE, controls). Each threat cites a code snippet verified against the file on disk.
+2. **Explore.** Per-subsystem agent reads files, greps, and loads only the reference cards it needs (OWASP, MITRE, controls). Supplied snippets are checked against files; missing or unmatched evidence remains marked. A matching citation does not prove exploitability.
 3. **Synthesise.** One call finds cross-cutting threats that span subsystems, with evidence verification.
 4. **Report.** Control IDs the model chose are mapped to framework requirements by catalogue lookup, never by generation.
 
@@ -82,11 +84,11 @@ The [agentic AI controls](docs/agentic-ai-controls.md) baseline scales 14 contro
 
 ## Features
 
-**Analysis** &mdash; Agentic codebase analysis with resumable runs, per-phase token budgets and run manifests. Verified evidence: each threat quotes code matched against the file on disk. Single-shot mode from text descriptions. AI/agentic pattern detection for RAG, multi-agent, code execution, tool/MCP ecosystems, persistent memory.
+**Analysis** &mdash; Agentic codebase analysis with resumable runs, per-phase token budgets and run manifests. Evidence checks match supplied snippets against files; findings without verified evidence remain visible. Single-shot mode from text descriptions. AI/agentic pattern detection for RAG, multi-agent, code execution, tool/MCP ecosystems, persistent memory.
 
 **Controls & compliance** &mdash; 69 controls in eight domains with deterministic framework mapping to AIUC-1, ISO 42001, EU AI Act, ISO 27001. Exports for GRC as CSV, JSON, SARIF. Browse with `stride-gpt controls`.
 
-**Outputs** &mdash; Markdown, JSON, SARIF, self-contained HTML. MITRE ATT&CK/ATLAS IDs (catalogue-constrained). Data flow diagrams (Mermaid). SARIF imports into GitHub, GitLab, Azure DevOps, IDEs.
+**Outputs** &mdash; Markdown, JSON, SARIF, self-contained HTML. MITRE ATT&CK/ATLAS IDs and canonical names validated against packaged catalogues; unlisted IDs are omitted. This checks identifier validity, not applicability. Data flow diagrams (Mermaid). SARIF imports into GitHub, GitLab, Azure DevOps, IDEs.
 
 **Models** &mdash; OpenAI, Anthropic, Google, Mistral, Groq, DeepSeek, OpenRouter, LM Studio. Reasoning-model support. Two-tier routing: strong architect for planning, fast worker for exploration.
 
@@ -115,7 +117,7 @@ pip install stride-gpt
 ### From source (CLI + web UI)
 
 ```bash
-git clone https://github.com/mrwadams/stride-gpt.git && cd stride-gpt
+git clone https://github.com/aisecnomad/Nexus-stride-gpt.git && cd Nexus-stride-gpt
 uv sync                  # or: pip install -e .
 cp .env.example .env     # add your API keys
 ```

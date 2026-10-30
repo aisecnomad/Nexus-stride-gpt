@@ -143,20 +143,23 @@ class TestFormatMitreCell:
         techs = [{"id": "T1190", "name": "Exploit Public-Facing Application"}]
         assert format_mitre_cell(techs) == "T1190 (Exploit Public-Facing Application)"
 
-    def test_string_form_falls_back_to_id_only(self):
-        assert format_mitre_cell(["T1190", "T1078"]) == "T1190, T1078"
+    def test_string_form_resolves_canonical_names(self):
+        assert format_mitre_cell(["T1190", "T1078"]) == "T1190 (Exploit Public-Facing Application), T1078 (Valid Accounts)"
 
     def test_comma_separated_string_recovered(self):
         """Smaller worker models emit MITRE_ATTACK as one comma-separated
         string; #134 — it must render instead of leaving the cell blank."""
-        assert format_mitre_cell("T1190, T1059, AML.T0053") == "T1190, T1059, AML.T0053"
+        assert format_mitre_cell("T1190, T1059, AML.T0053") == (
+            "T1190 (Exploit Public-Facing Application), "
+            "T1059 (Command and Scripting Interpreter), AML.T0053 (AI Agent Tool Invocation)"
+        )
 
     def test_single_id_string(self):
-        assert format_mitre_cell("T1190") == "T1190"
+        assert format_mitre_cell("T1190") == "T1190 (Exploit Public-Facing Application)"
 
     def test_missing_id_skipped(self):
         techs = [{"id": "T1190", "name": "A"}, {"name": "no id"}, {"id": "T1078", "name": "B"}]
-        assert format_mitre_cell(techs) == "T1190 (A), T1078 (B)"
+        assert format_mitre_cell(techs) == "T1190 (Exploit Public-Facing Application), T1078 (Valid Accounts)"
 
     def test_empty_or_invalid_yields_empty_string(self):
         assert format_mitre_cell(None) == ""
@@ -165,9 +168,9 @@ class TestFormatMitreCell:
         assert format_mitre_cell("not a list") == ""
         assert format_mitre_cell("see the attached notes for details") == ""
 
-    def test_pipes_inside_names_escaped(self):
-        techs = [{"id": "T1", "name": "foo | bar"}]
-        assert format_mitre_cell(techs) == "T1 (foo \\| bar)"
+    def test_model_supplied_names_are_replaced(self):
+        techs = [{"id": "T1190", "name": "foo | bar"}, {"id": "T1", "name": "Invented"}]
+        assert format_mitre_cell(techs) == "T1190 (Exploit Public-Facing Application)"
 
 
 class TestNormalizeMitreTechniques:
@@ -181,15 +184,15 @@ class TestNormalizeMitreTechniques:
 
     def test_list_of_strings(self):
         assert normalize_mitre_techniques(["T1190", "T1078"]) == [
-            ("T1190", ""),
-            ("T1078", ""),
+            ("T1190", "Exploit Public-Facing Application"),
+            ("T1078", "Valid Accounts"),
         ]
 
     def test_comma_separated_string(self):
         assert normalize_mitre_techniques("T1190, T1059, AML.T0053") == [
-            ("T1190", ""),
-            ("T1059", ""),
-            ("AML.T0053", ""),
+            ("T1190", "Exploit Public-Facing Application"),
+            ("T1059", "Command and Scripting Interpreter"),
+            ("AML.T0053", "AI Agent Tool Invocation"),
         ]
 
     def test_empty_and_none(self):
@@ -207,22 +210,19 @@ class TestNormalizeMitreTechniques:
         value never becomes a fake technique."""
         assert normalize_mitre_techniques("just some prose") == []
         assert normalize_mitre_techniques("T1190, and some notes, T1078") == [
-            ("T1190", ""),
-            ("T1078", ""),
+            ("T1190", "Exploit Public-Facing Application"),
+            ("T1078", "Valid Accounts"),
         ]
 
-    def test_object_ids_trusted_without_id_filter(self):
-        """Structured objects are authoritative — an unusual id is kept even
-        if it wouldn't pass the string-token ID filter."""
-        assert normalize_mitre_techniques([{"id": "DS0015", "name": "App Log"}]) == [
-            ("DS0015", "App Log")
-        ]
+    def test_object_ids_require_catalogue_membership(self):
+        """Structured model output is untrusted, just like the string shape."""
+        assert normalize_mitre_techniques([{"id": "DS0015", "name": "App Log"}]) == []
 
 
 class TestIsMitreTechniqueId:
     def test_enterprise_ids(self):
         assert is_mitre_technique_id("T1190")
-        assert is_mitre_technique_id("T1078.004")
+        assert not is_mitre_technique_id("T1078.004")  # absent from the parent-only cards
 
     def test_atlas_ids(self):
         assert is_mitre_technique_id("AML.T0053")
@@ -239,8 +239,8 @@ class TestMitreUrl:
     def test_enterprise_top_level(self):
         assert mitre_url("T1190") == "https://attack.mitre.org/techniques/T1190/"
 
-    def test_enterprise_subtechnique(self):
-        assert mitre_url("T1078.004") == "https://attack.mitre.org/techniques/T1078/004/"
+    def test_unlisted_enterprise_subtechnique(self):
+        assert mitre_url("T1078.004") == ""
 
     def test_atlas_id(self):
         assert mitre_url("AML.T0051") == "https://atlas.mitre.org/techniques/AML.T0051/"

@@ -27,6 +27,7 @@ from stride_gpt.agent.tools import (
 from stride_gpt.core.controls import split_control_ids
 from stride_gpt.core.json_extract import extract_json_object
 from stride_gpt.core.llm import call_llm, call_llm_with_tools
+from stride_gpt.core.mitre import normalize_threat_mitre
 from stride_gpt.core.prompts import base_system_prompt
 from stride_gpt.core.schemas import (
     ANALYSED_OUTCOMES,
@@ -830,6 +831,7 @@ class _SubsystemRun:
             value = _threat_arg(args, arg)
             if value not in (None, "", []):
                 threat[field] = value
+        threat = normalize_threat_mitre(threat)
         controls_note = _apply_control_ids(threat)
 
         checks = verify_evidence(self.target_path, args.get("evidence"))
@@ -1233,6 +1235,7 @@ def classify_synthesis(
         entry["Classification"] = kind
         # The architect gets no tool result to learn from, so the note is
         # discarded; an invented ID is simply not recorded.
+        entry.update(normalize_threat_mitre(entry))
         _apply_control_ids(entry)
 
         if kind == AGGREGATION:

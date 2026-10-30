@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from markdown_it import MarkdownIt
 from typer.testing import CliRunner
 
 from stride_gpt import cli
@@ -164,7 +165,7 @@ class TestResumedRunLooksLikeAnUninterruptedOne:
         assert "`src/auth.py`" in report
         assert "./src/auth.py" not in report
         # And the title still names the project, as an uninterrupted run does.
-        assert f"# STRIDE Threat Model: {tmp_path.name}" in report
+        assert f"<h1>STRIDE Threat Model: {tmp_path.name}</h1>" in MarkdownIt().render(report)
 
     def test_unreadable_checkpoint_refuses_instead_of_raising(self, tmp_path):
         checkpoint_path = tmp_path / "report.checkpoint.json"

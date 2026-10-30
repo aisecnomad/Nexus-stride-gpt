@@ -23,13 +23,13 @@ Several of these are already mitigated in the code. The rest is configuration, c
 
 ## What STRIDE-GPT already does
 
-- **Sandboxed file tools.** The agent's `read_file`, `grep_content` and `list_directory` resolve every path inside the target directory. They refuse traversal, symlinks that point outside, and version-control metadata (`.git`, `.hg`, `.svn`), which is where `actions/checkout` writes the job token. Model-supplied regexes are length-capped and screened for catastrophic backtracking.
-- **Evidence verification.** Quoted snippets are checked against the file on disk, so a model steered by planted instructions cannot fabricate code evidence unnoticed.
-- **Output encoding.** Model text is escaped in markdown tables (pipes and newlines) and with `html.escape` throughout the HTML report. Mermaid runs with `securityLevel: 'strict'`. Control IDs and MITRE IDs are filtered to their catalogues before rendering.
+- **Sandboxed file tools.** The agent's `read_file`, `grep_content` and `list_directory` resolve every path inside the target directory. They refuse traversal, symlinks that point outside, and version-control metadata (`.git`, `.hg`, `.svn`), which is where `actions/checkout` writes the job token. Regex searches have engine-enforced timeouts and a whole-search deadline; file reads are bounded and report truncation or skipped oversized files.
+- **Evidence verification.** Quoted snippets are checked against the file on disk, with missing or unmatched citations marked explicitly. Matching source text establishes citation provenance; it does not prove exploitability or the model's interpretation.
+- **Output encoding.** Model fields in Markdown tables are treated as literal text. Free-form model Markdown is parsed into a restricted subset: images and active links are removed, and raw HTML is inert. HTML reports escape model text with `html.escape`, and Mermaid runs with `securityLevel: 'strict'`. Control IDs and MITRE IDs are filtered to their packaged catalogues; MITRE names come from the catalogue rather than the model. Catalogue membership does not prove that a technique applies to the finding.
 - **Hardened parsing.** Uploaded draw.io XML is parsed with `defusedxml`, and the editor's `postMessage` origin is scoped to the configured draw.io host.
 - **Shareable run manifests.** Manifests exclude API keys and endpoints and redact filesystem paths.
 - **Supply chain.** Every dependency is pinned in `uv.lock`, the base image is pinned by digest, and CI runs Bandit, CodeQL, pip-audit, Gitleaks and Trivy.
-- **Container defaults.** The UI image runs as a non-root user, and `docker-compose.yml` drops all Linux capabilities and sets `no-new-privileges` and resource limits.
+- **Container defaults.** The UI image runs as a non-root user, and `docker-compose.yml` binds its published port to loopback, drops all Linux capabilities, and sets `no-new-privileges` and resource limits.
 
 ## Reference architecture for a shared web UI
 
@@ -85,7 +85,7 @@ Streamlit keeps a WebSocket open at `/_stcore/stream`, so any proxy in the path 
 ### Authorisation (IAM-06, IAM-07)
 
 - **Restrict who can use it** at the proxy: an email domain, or an IdP group (oauth2-proxy `--allowed-group` with your provider's groups claim). Threat models describe weaknesses, so treat access as need-to-know.
-- **Keep the provider key least-privileged.** Use a project-scoped key with a spending cap, separate keys per environment, and rotation on any suspected exposure. In the web UI, users can bring their own key instead; it stays in their browser session.
+- **Keep the provider key least-privileged.** Use a project-scoped key with a spending cap, separate keys per environment, and rotation on any suspected exposure. Operator credentials from environment variables are resolved server-side and never prefilled in browser widgets. Users can enter their own credentials, which stay in their own server session and browser widget. Password masking only conceals the display; it does not protect a widget value from the user who receives it.
 - **If anything downstream consumes the proxy's tokens** (for example `--pass-authorization-header` forwarding the ID token), validate them as IAM-05 describes: pinned issuer keys, allow-listed algorithms, and `iss`, `aud`, `exp` and `typ` checks.
 
 ### Workload identity and mTLS (IAM-03, IAM-04, DAT-05)

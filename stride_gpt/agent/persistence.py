@@ -32,6 +32,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ValidationError
 
 from stride_gpt.agent.evidence import normalise_path
+from stride_gpt.agent.safe_io import atomic_write_text
 from stride_gpt.core.schemas import (
     AnalysisPlan,
     LLMConfig,
@@ -382,7 +383,7 @@ def _write_json(path: Path, payload: str) -> None:
     """Write ``payload`` to ``path`` with the project's trailing-newline convention."""
     if not payload.endswith("\n"):
         payload = payload + "\n"
-    path.write_text(payload)
+    atomic_write_text(path, payload)
 
 
 def write_intermediates(
@@ -607,6 +608,43 @@ def build_quick_manifest(
 # ---------------------------------------------------------------------------
 
 
+class CheckpointTargetIdentity(BaseModel):
+    """The analysis scope, independent of a checkout's absolute location.
+
+    Git checkpoints identify both the repository-relative directory and its
+    committed tree. Non-Git targets bind to a hash of their canonical location;
+    ``--force`` still acknowledges that their content cannot be verified.
+    """
+
+    kind: Literal["git", "directory"]
+    root: str
+    tree_sha: str | None = None
+
+
+def checkpoint_target_identity(target: Path) -> CheckpointTargetIdentity:
+    resolved = target.resolve()
+    repo = _git_toplevel(resolved)
+    if repo is not None:
+        try:
+            relative = resolved.relative_to(repo.resolve()).as_posix()
+            revision = "HEAD^{tree}" if relative == "." else f"HEAD:{relative}"
+            result = subprocess.run(
+                ["git", "-C", str(repo), "rev-parse", "--verify", revision],
+                capture_output=True, check=False, text=True, timeout=5,
+            )
+            tree = result.stdout.strip()
+            if result.returncode == 0 and len(tree) in (40, 64) and all(
+                c in "0123456789abcdef" for c in tree
+            ):
+                return CheckpointTargetIdentity(kind="git", root=relative, tree_sha=tree)
+        except (ValueError, OSError, subprocess.TimeoutExpired):
+            # Git metadata is unavailable; bind the checkpoint to its canonical
+            # directory instead and require force to acknowledge unverifiable content.
+            pass
+    location_hash = hashlib.sha256(os.fsencode(resolved)).hexdigest()
+    return CheckpointTargetIdentity(kind="directory", root=location_hash)
+
+
 class Checkpoint(BaseModel):
     """In-progress /analyze state, written after each subsystem finishes.
 
@@ -623,6 +661,8 @@ class Checkpoint(BaseModel):
     # Redacted per ``redact_path``, like the run manifest's ``target_path``.
     target_path: str
     target_git_sha: str | None
+    # Missing only in legacy checkpoints, which are readable but not resumable.
+    target_identity: CheckpointTargetIdentity | None = None
     # Identifies the model/prompt pair this checkpoint was produced under.
     # See ``compute_checkpoint_config_hash`` for why this isn't the same
     # hash the run manifest records.
@@ -677,6 +717,7 @@ def build_checkpoint(
         updated_at=datetime.now(UTC),
         target_path=redact_path(target),
         target_git_sha=discover_git_sha(target),
+        target_identity=checkpoint_target_identity(target),
         config_hash=compute_checkpoint_config_hash(models),
         app_type_source=app_type_source,
         plan=redacted_plan,
@@ -696,9 +737,7 @@ def write_checkpoint(path: Path, checkpoint: Checkpoint) -> None:
     payload = checkpoint.model_dump_json(indent=2)
     if not payload.endswith("\n"):
         payload += "\n"
-    tmp_path = path.with_name(path.name + ".tmp")
-    tmp_path.write_text(payload)
-    tmp_path.replace(path)
+    atomic_write_text(path, payload)
 
 
 class CheckpointValidationError(Exception):
@@ -869,7 +908,7 @@ def validate_checkpoint_for_resume(
 ) -> None:
     """Raise :class:`CheckpointValidationError` if resuming would be unsound.
 
-    A changed git SHA or config hash always refuses — those mean the
+    A changed analysis root/tree, git SHA or config hash always refuses — those mean the
     checkpointed findings describe code or a model that no longer matches
     this invocation, and ``--force`` can't make stale findings sound. A
     dirty working tree, or a target with no discoverable git SHA at all, is
@@ -888,6 +927,18 @@ def validate_checkpoint_for_resume(
         raise CheckpointValidationError(
             "config_hash changed — the model or system prompt differs from "
             "the checkpointed run."
+        )
+
+    if checkpoint.target_identity is None:
+        raise CheckpointValidationError(
+            "legacy checkpoint has no analysis-root identity; start a fresh analysis "
+            "without --resume. --force cannot safely infer the original scope."
+        )
+    current_identity = checkpoint_target_identity(target)
+    if checkpoint.target_identity != current_identity:
+        raise CheckpointValidationError(
+            "analysis root or committed tree changed; the checkpoint belongs to a "
+            "different analysis scope. Start a fresh analysis without --resume."
         )
 
     if force:

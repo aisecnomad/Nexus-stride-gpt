@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
+import pytest
+
 from stride_gpt.agent.quick import (
     QUICK_TOOLS,
     _build_user_content,
@@ -14,6 +16,7 @@ from stride_gpt.agent.quick import (
     run_quick_analysis,
 )
 from stride_gpt.core.schemas import LLMResponse, ToolCallResult
+from tests.fakes import QUICK_TOOL_NAMES, ScriptedLLM, call_tools, reply
 
 # ---------------------------------------------------------------------------
 # Tool set
@@ -27,6 +30,47 @@ class TestQuickTools:
         hallucinate. Restrict to the reference-card tools."""
         names = {t["function"]["name"] for t in QUICK_TOOLS}
         assert names == {"load_reference", "list_references"}
+
+    @pytest.mark.parametrize(
+        "name,arguments",
+        [
+            ("read_file", {}),
+            ("grep_content", {"pattern": "PRIVATE_"}),
+            ("list_directory", {}),
+            ("search_files", {"pattern": "*"}),
+            ("unknown_tool", {}),
+        ],
+    )
+    def test_unadvertised_tool_is_denied_without_filesystem_access(
+        self, name, arguments, tmp_path, model_pair, monkeypatch
+    ):
+        """A malicious model response cannot grant itself extra capabilities."""
+        secret = tmp_path / "private.txt"
+        secret.write_text("PRIVATE_SENTINEL")
+        arguments = {**arguments, "path": str(secret)}
+
+        def filesystem_access(*args, **kwargs):
+            pytest.fail("quick analysis reached the filesystem executor")
+
+        monkeypatch.setattr("stride_gpt.agent.tools.execute_tool", filesystem_access)
+        steps = [
+            call_tools(ToolCallResult("denied", name, arguments), tools=QUICK_TOOL_NAMES),
+            call_tools(
+                ToolCallResult("allowed", "load_reference", {"name": "genai"}),
+                tools=QUICK_TOOL_NAMES,
+            ),
+            reply('{"threat_model":[],"improvement_suggestions":[]}', tools=QUICK_TOOL_NAMES),
+        ]
+        with ScriptedLLM(steps) as fake:
+            output = run_quick_analysis(model_pair, "Review the application description.")
+
+        denied = [m for m in fake.requests[1].messages if m["role"] == "tool"]
+        assert len(denied) == 1
+        assert denied[0]["tool_call_id"] == "denied"
+        assert "not available in quick analysis" in denied[0]["content"]
+        assert "PRIVATE_SENTINEL" not in json.dumps(fake.requests[-1].messages)
+        assert output.references_loaded == ["genai"]
+        assert output.tool_calls == 2
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +285,82 @@ class TestParseThreatModel:
     def test_invalid_returns_none(self):
         assert _parse_threat_model("not json at all") is None
 
+    @pytest.mark.parametrize("payload", [
+        {"threat_model": ["x"]},
+        {"threat_model": [None]},
+        {"threat_model": None},
+        {"threat_model": {}},
+        {"threat_model": [{"Threat Type": "Spoofing", "Scenario": "missing impact"}]},
+        {"improvement_suggestions": "not a list"},
+        {"improvement_suggestions": [None]},
+    ])
+    def test_malformed_shapes_return_none_for_retry(self, payload):
+        assert _parse_threat_model(json.dumps(payload)) is None
+
+
+class TestSchemaFailureProtocol:
+    @pytest.mark.parametrize("with_reference", [False, True])
+    @pytest.mark.parametrize("payload", [
+        {"threat_model": ["x"]},
+        {"threat_model": None},
+        {"improvement_suggestions": [None]},
+    ])
+    def test_malformed_model_output_retries_with_valid_protocol(
+        self, payload, with_reference, model_pair,
+    ):
+        steps = []
+        if with_reference:
+            steps.append(call_tools(
+                ToolCallResult("reference", "load_reference", {"name": "genai"}),
+                tools=QUICK_TOOL_NAMES,
+            ))
+        steps.extend([
+            reply(json.dumps(payload), tools=QUICK_TOOL_NAMES),
+            reply(json.dumps({
+                "threat_model": [{
+                    "Threat Type": "Tampering", "Scenario": "s", "Potential Impact": "i",
+                    "CONTROLS": ["IAM-05", "IAM-999"],
+                    "MITRE_ATTACK": [{"id": "T1190", "name": "Forged"}, {"id": "T9999"}],
+                }],
+                "improvement_suggestions": ["fix it"],
+            })),
+        ])
+        with ScriptedLLM(steps) as fake:
+            output = run_quick_analysis(model_pair, "Review this application.")
+        assert fake.requests[-1].kind == "plain"
+        assert output.llm_calls == 2 + int(with_reference)
+        assert output.threat_model[0]["CONTROLS"] == ["IAM-05"]
+        assert output.threat_model[0]["MITRE_ATTACK"] == [
+            {"id": "T1190", "name": "Exploit Public-Facing Application"},
+        ]
+
+    def test_malformed_retry_returns_failure_message_without_raising(self, model_pair):
+        with ScriptedLLM([
+            reply('{"threat_model":["x"]}', tools=QUICK_TOOL_NAMES),
+            reply('{"threat_model":[null]}'),
+        ]):
+            output = run_quick_analysis(model_pair, "Review this application.")
+        assert output.threat_model == []
+        assert "Failed to parse" in output.improvement_suggestions[0]
+
+    def test_call_limit_retry_keeps_message_protocol(self, model_pair):
+        with ScriptedLLM([
+            call_tools(
+                ToolCallResult("reference", "load_reference", {"name": "genai"}),
+                tools=QUICK_TOOL_NAMES,
+            ),
+            reply('{"threat_model":[],"improvement_suggestions":[]}'),
+        ]):
+            output = run_quick_analysis(model_pair, "Review this application.", max_llm_calls=1)
+        assert output.threat_model == []
+        assert output.references_loaded == ["genai"]
+
+    def test_retry_does_not_mutate_original_user_turn(self, llm_config):
+        messages = [{"role": "system", "content": "s"}, {"role": "user", "content": "hi"}]
+        with ScriptedLLM([reply('{"threat_model":[],"improvement_suggestions":[]}')]):
+            _retry_as_json(llm_config, messages)
+        assert messages == [{"role": "system", "content": "s"}, {"role": "user", "content": "hi"}]
+
 
 class TestStripToolArtifacts:
     def test_removes_tool_messages(self):
@@ -316,7 +436,7 @@ class TestRetryAsJson:
     def test_retry_success_returns_parsed_model(self, mock_llm, llm_config):
         mock_llm.return_value = LLMResponse(
             content=json.dumps({
-                "threat_model": [{"Threat Type": "Spoofing", "Scenario": "s"}],
+                "threat_model": [{"Threat Type": "Spoofing", "Scenario": "s", "Potential Impact": "i"}],
                 "improvement_suggestions": ["x"],
             }),
             thinking=None, reasoning=None, model="t",

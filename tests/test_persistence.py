@@ -6,6 +6,8 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from stride_gpt.agent.persistence import (
     ModelDescriptor,
     RunManifest,
@@ -831,3 +833,22 @@ def test_build_analyze_manifest_records_dropped_synthesis_items(
     assert dropped.synthesis_dropped == drops
     assert empty.synthesis_items_dropped == 0
     assert empty.synthesis_dropped == []
+
+
+@pytest.mark.parametrize("suffix", ["plan.json", "findings.json", "run.json"])
+def test_intermediate_symlink_cannot_overwrite_outside_file(
+    tmp_path, sample_plan, sample_report, suffix
+):
+    outside = tmp_path / "outside"
+    outside.write_text("original")
+    destination = tmp_path / f"report.{suffix}"
+    destination.symlink_to(outside)
+    with pytest.raises(OSError):
+        write_intermediates(
+            tmp_path / "report.md",
+            manifest=_make_analyze_manifest(tmp_path),
+            plan=sample_plan,
+            findings=sample_report.findings,
+        )
+    assert outside.read_text() == "original"
+    assert destination.is_symlink()
