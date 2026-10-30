@@ -34,9 +34,9 @@ RUN python -m venv ${VIRTUAL_ENV}
 # (--no-emit-project) and skip the dev group. Export to a pinned requirements
 # file, then pip install it into the venv the entrypoint runs from.
 RUN ${VIRTUAL_ENV}/bin/pip install --no-cache-dir --upgrade pip uv && \
-    ${VIRTUAL_ENV}/bin/uv export --frozen --no-dev --no-emit-project --no-hashes \
+    ${VIRTUAL_ENV}/bin/uv export --frozen --no-dev --no-emit-project \
         -o /tmp/requirements.lock && \
-    ${VIRTUAL_ENV}/bin/pip install --no-cache-dir -r /tmp/requirements.lock && \
+    ${VIRTUAL_ENV}/bin/pip install --no-cache-dir --require-hashes -r /tmp/requirements.lock && \
     ${VIRTUAL_ENV}/bin/pip check
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \

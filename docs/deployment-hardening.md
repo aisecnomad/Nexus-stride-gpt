@@ -25,7 +25,7 @@ Several of these are already mitigated in the code. The rest is configuration, c
 
 - **Sandboxed file tools.** The agent's `read_file`, `grep_content` and `list_directory` resolve every path inside the target directory. They refuse traversal, symlinks that point outside, and version-control metadata (`.git`, `.hg`, `.svn`), which is where `actions/checkout` writes the job token. Regex searches have engine-enforced timeouts and a whole-search deadline; file reads are bounded and report truncation or skipped oversized files.
 - **Evidence verification.** Quoted snippets are checked against the file on disk, with missing or unmatched citations marked explicitly. Matching source text establishes citation provenance; it does not prove exploitability or the model's interpretation.
-- **Output encoding.** Model fields in Markdown tables are treated as literal text. Free-form model Markdown is parsed into a restricted subset: images and active links are removed, and raw HTML is inert. HTML reports escape model text with `html.escape`, and Mermaid runs with `securityLevel: 'strict'`. Control IDs and MITRE IDs are filtered to their packaged catalogues; MITRE names come from the catalogue rather than the model. Catalogue membership does not prove that a technique applies to the finding.
+- **Output encoding.** Model fields in Markdown tables are treated as literal text. Free-form model Markdown is parsed into a restricted subset: images and active links are removed, and raw HTML is inert. HTML reports escape model text with `html.escape`, contain no JavaScript or remote assets, and show Mermaid diagrams as source rather than executing them. Control IDs and MITRE IDs are filtered to their packaged catalogues; MITRE names come from the catalogue rather than the model. Catalogue membership does not prove that a technique applies to the finding.
 - **Hardened parsing.** Uploaded draw.io XML is parsed with `defusedxml`, and the editor's `postMessage` origin is scoped to the configured draw.io host.
 - **Shareable run manifests.** Manifests exclude API keys and endpoints and redact filesystem paths.
 - **Supply chain.** Every dependency is pinned in `uv.lock`, the base image is pinned by digest, and CI runs Bandit, CodeQL, pip-audit, Gitleaks and Trivy.
@@ -86,6 +86,7 @@ Streamlit keeps a WebSocket open at `/_stcore/stream`, so any proxy in the path 
 
 - **Restrict who can use it** at the proxy: an email domain, or an IdP group (oauth2-proxy `--allowed-group` with your provider's groups claim). Threat models describe weaknesses, so treat access as need-to-know.
 - **Keep the provider key least-privileged.** Use a project-scoped key with a spending cap, separate keys per environment, and rotation on any suspected exposure. Operator credentials from environment variables are resolved server-side and never prefilled in browser widgets. Users can enter their own credentials, which stay in their own server session and browser widget. Password masking only conceals the display; it does not protect a widget value from the user who receives it.
+- **Use per-user GitHub credentials for repository analysis.** A server `GITHUB_API_KEY` is ignored by default; each user supplies their own token in the current session. For a single-user deployment or one trust domain where every user is authorized for every repository the token can read, operators may explicitly set `STRIDE_GPT_ALLOW_SHARED_GITHUB_TOKEN=true`. An identity-aware proxy alone does not impose each user's GitHub repository permissions on a shared token. Use a least-privilege token and keep this setting disabled for users with different repository access.
 - **If anything downstream consumes the proxy's tokens** (for example `--pass-authorization-header` forwarding the ID token), validate them as IAM-05 describes: pinned issuer keys, allow-listed algorithms, and `iss`, `aud`, `exp` and `typ` checks.
 
 ### Workload identity and mTLS (IAM-03, IAM-04, DAT-05)
@@ -176,7 +177,7 @@ Deny everything else, including cloud metadata endpoints. Three settings reduce 
 - `LITELLM_LOCAL_MODEL_COST_MAP=True` makes LiteLLM use its bundled model price map instead of fetching it at start-up.
 - `TIKTOKEN_CACHE_DIR`, pre-populated at image build, gives exact token counts without allowing `openaipublic.blob.core.windows.net`. Without it, token estimates fall back to an approximation.
 
-Two other endpoints are fetched by the *user's browser*, not the server: the diagram editor (`embed.diagrams.net`, or your own host via `STRIDE_GPT_DRAWIO_URL`) and the Tailwind and Mermaid CDNs used by HTML reports.
+The diagram editor (`embed.diagrams.net`, or your own host via `STRIDE_GPT_DRAWIO_URL`) is fetched by the *user's browser*, not the server. Standalone HTML reports load no external assets; viewing a linked MITRE technique is a separate user-initiated request.
 
 ### Private connectivity to models (NET-05)
 

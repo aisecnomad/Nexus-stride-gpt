@@ -3,8 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/mrwadams/stride-gpt/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/mrwadams/stride-gpt/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://pypi.org/project/stride-gpt/"><img alt="PyPI" src="https://img.shields.io/pypi/v/stride-gpt"></a>
+  <a href="https://github.com/aisecnomad/Nexus-stride-gpt/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/aisecnomad/Nexus-stride-gpt/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="Python 3.12 | 3.13 | 3.14" src="https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue">
   <a href="LICENSE-MIT"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
@@ -88,7 +87,7 @@ The [agentic AI controls](docs/agentic-ai-controls.md) baseline scales 14 contro
 
 **Controls & compliance** &mdash; 69 controls in eight domains with deterministic framework mapping to AIUC-1, ISO 42001, EU AI Act, ISO 27001. Exports for GRC as CSV, JSON, SARIF. Browse with `stride-gpt controls`.
 
-**Outputs** &mdash; Markdown, JSON, SARIF, self-contained HTML. MITRE ATT&CK/ATLAS IDs and canonical names validated against packaged catalogues; unlisted IDs are omitted. This checks identifier validity, not applicability. Data flow diagrams (Mermaid). SARIF imports into GitHub, GitLab, Azure DevOps, IDEs.
+**Outputs** &mdash; Markdown, JSON, SARIF, self-contained HTML. MITRE ATT&CK/ATLAS IDs and canonical names validated against packaged catalogues; unlisted IDs are omitted. This checks identifier validity, not applicability. HTML reports show Mermaid source as text without loading remote scripts. SARIF imports into GitHub, GitLab, Azure DevOps, IDEs.
 
 **Models** &mdash; OpenAI, Anthropic, Google, Mistral, Groq, DeepSeek, OpenRouter, LM Studio. Reasoning-model support. Two-tier routing: strong architect for planning, fast worker for exploration.
 
@@ -108,6 +107,8 @@ The [agentic AI controls](docs/agentic-ai-controls.md) baseline scales 14 contro
 
 ## Installation
 
+PyPI packages are upstream releases. Install this checkout to use Nexus enhancements.
+
 ### pip (CLI)
 
 ```bash
@@ -125,7 +126,6 @@ cp .env.example .env     # add your API keys
 ### Docker (web UI)
 
 ```bash
-docker pull mrwadams/stridegpt:latest
 docker compose up        # hardened: cap_drop ALL, no-new-privileges, read-only rootfs, resource limits
 ```
 

@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "apps" / "web"))
 from provider_keys import (
     PROVIDER_API_KEY_STATE,
     has_server_api_key,
+    has_shared_github_api_key,
     resolve_github_api_key,
     resolve_provider_api_key,
 )
@@ -64,7 +65,9 @@ def test_credentials_resolve_without_copying_server_keys_to_user_state(
     user_state = {}
     assert has_server_api_key(provider)
     assert resolve_provider_api_key(provider, user_state) == "fake-server-key"
-    assert resolve_github_api_key(user_state) == "fake-server-github-key"
+    monkeypatch.delenv("STRIDE_GPT_ALLOW_SHARED_GITHUB_TOKEN", raising=False)
+    assert resolve_github_api_key(user_state) == ""
+    assert not has_shared_github_api_key()
     assert user_state == {}
     user_state.update({state_key: "fake-user-key", "github_api_key": "fake-user-github-key"})
     assert resolve_provider_api_key(provider, user_state) == "fake-user-key"
@@ -85,3 +88,17 @@ def test_credentials_resolve_without_copying_server_keys_to_user_state(
 def test_unknown_provider_has_no_credential_fallback():
     assert not has_server_api_key("unknown")
     assert resolve_provider_api_key("unknown", {}) == ""
+
+
+def test_github_shared_token_requires_explicit_opt_in(monkeypatch):
+    monkeypatch.setenv("GITHUB_API_KEY", "fake-server-github-key")
+    for value in ("", "false", "1", "yes"):
+        monkeypatch.setenv("STRIDE_GPT_ALLOW_SHARED_GITHUB_TOKEN", value)
+        assert resolve_github_api_key({}) == ""
+        assert not has_shared_github_api_key()
+    monkeypatch.setenv("STRIDE_GPT_ALLOW_SHARED_GITHUB_TOKEN", "true")
+    assert has_shared_github_api_key()
+    assert resolve_github_api_key({}) == "fake-server-github-key"
+    assert resolve_github_api_key({"github_api_key": "user-key"}) == "user-key"
+    monkeypatch.delenv("GITHUB_API_KEY")
+    assert not has_shared_github_api_key()

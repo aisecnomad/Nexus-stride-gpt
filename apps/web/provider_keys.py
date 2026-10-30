@@ -50,5 +50,20 @@ def resolve_provider_api_key(provider: str, user_state: Mapping[str, str]) -> st
 
 
 def resolve_github_api_key(user_state: Mapping[str, str]) -> str:
-    """Resolve the GitHub token server-side, without populating a password field."""
-    return user_state.get("github_api_key", "") or os.environ.get("GITHUB_API_KEY", "")
+    """Use the session token, unless shared server-token access is opted in.
+
+    A deployment-wide token can access private repositories irrespective of
+    the current user's GitHub permissions. Explicit opt-in is only suitable
+    when all users of the deployment share that token's trust boundary.
+    """
+    user_token = user_state.get("github_api_key", "")
+    if user_token:
+        return user_token
+    if os.environ.get("STRIDE_GPT_ALLOW_SHARED_GITHUB_TOKEN", "").strip().lower() == "true":
+        return os.environ.get("GITHUB_API_KEY", "")
+    return ""
+
+
+def has_shared_github_api_key() -> bool:
+    """Whether the operator has explicitly enabled a shared GitHub token."""
+    return bool(resolve_github_api_key({}))

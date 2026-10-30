@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -654,15 +655,34 @@ class TestMitreAttackColumn:
 class TestRenderHtml:
     """The HTML renderer is the human-facing companion to the JSON report.
     Tests assert on shape and key fragments, not whole-document bytes — the
-    Tailwind class soup will churn often, but the structural anchors won't."""
+    styling may change, but the structural anchors won't."""
 
     def test_doctype_and_scaffold(self, sample_report: AnalysisReport):
         html = render_html(sample_report)
         assert html.startswith("<!doctype html>")
-        # Pin the exact CDN script tag rather than the bare hostname — CodeQL
-        # otherwise mistakes the substring check for URL allowlist sanitization.
-        assert '<script src="https://cdn.tailwindcss.com">' in html
+        assert "Content-Security-Policy" in html
+        assert "default-src 'none'" in html
         assert "<title>STRIDE Threat Model" in html
+
+    def test_report_loads_no_active_external_content(self, sample_report):
+        """A confidential report must not fetch scripts, images or styles on open."""
+        class Tags(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.active = []
+
+            def handle_starttag(self, tag, attrs):
+                if tag in {"script", "link", "img", "iframe", "object", "embed"}:
+                    self.active.append(tag)
+                assert not any(name.lower().startswith("on") for name, _ in attrs)
+
+        sample_report.data_flow_diagram = 'flowchart LR\n A["</pre><script>alert(1)</script>"]'
+        output = render_html(sample_report)
+        parser = Tags()
+        parser.feed(output)
+        assert parser.active == []
+        assert "Mermaid source" in output
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in output
 
     def test_target_name_in_header(self, sample_report: AnalysisReport):
         html = render_html(sample_report)

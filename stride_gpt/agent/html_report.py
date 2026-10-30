@@ -1,7 +1,7 @@
-"""HTML report renderer — single-file, Tailwind-styled view of a STRIDE report.
+"""HTML report renderer — single-file, offline view of a STRIDE report.
 
-Output is a self-contained HTML document. The only external dependency is
-the Tailwind CDN; there is no JavaScript and no app code. Designed as a
+Output is a self-contained HTML document with inline CSS and no scripts.
+Mermaid diagrams are displayed as escaped source rather than executed. Designed as a
 human-readable companion to the JSON report — STRIDE category is the primary
 visual signal, every threat gets a card, and optional OWASP / Insider lenses
 surface as outline pills when present.
@@ -174,17 +174,50 @@ def _scaffold(*, target_name: str, body: str) -> str:
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'" />
     <title>{title}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      * {{ box-sizing: border-box; }}
+      body {{ margin: 0; background: #f8fafc; color: #0f172a; font: 16px/1.55 system-ui, sans-serif; }}
+      main {{ max-width: 64rem; margin: auto; padding: 3rem 1.5rem; }}
+      main > * + * {{ margin-top: 3rem; }}
+      section > * + *, article > * + *, header > * + * {{ margin-top: 1rem; }}
+      header {{ border-bottom: 1px solid #e2e8f0; padding-bottom: 1.5rem; }}
+      h1, h2, h3, p, dl, dd {{ margin: 0; }}
+      h1 {{ font-size: 2rem; line-height: 1.2; }}
+      h2 {{ font-size: 1.25rem; }}
+      h3 {{ font-size: 1rem; }}
+      dt {{ color: #64748b; font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }}
+      dl > div + div {{ margin-top: .75rem; }}
+      article {{ background: white; border: 1px solid #e2e8f0; border-radius: .5rem; padding: 1.25rem; }}
+      article + article {{ margin-top: 1rem; }}
+      pre {{ overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: #f1f5f9; border-radius: .35rem; padding: .75rem; }}
+      code, pre, .font-mono {{ font-family: ui-monospace, monospace; }}
+      ul {{ padding-left: 1.5rem; }}
+      table {{ width: 100%; border-collapse: collapse; background: white; text-align: left; }}
+      th, td {{ border-bottom: 1px solid #e2e8f0; padding: .5rem .75rem; vertical-align: top; }}
+      th {{ color: #64748b; font-size: .7rem; text-transform: uppercase; }}
+      a {{ color: #075985; }}
+      .overflow-x-auto, .overflow-auto {{ overflow-x: auto; }}
+      .inline-flex {{ display: inline-flex; align-items: center; margin: .1rem; border: 1px solid #cbd5e1; border-radius: 999px; padding: .15rem .65rem; font-size: .75rem; }}
+      .bg-indigo-50 {{ background: #eef2ff; color: #3730a3; }}
+      .bg-amber-50, .bg-amber-50\\/60 {{ background: #fffbeb; color: #92400e; }}
+      .bg-rose-50 {{ background: #fff1f2; color: #9f1239; }}
+      .bg-orange-50 {{ background: #fff7ed; color: #9a3412; }}
+      .bg-red-50 {{ background: #fef2f2; color: #991b1b; }}
+      .bg-sky-50 {{ background: #f0f9ff; color: #075985; }}
+      .bg-emerald-50 {{ background: #ecfdf5; color: #065f46; }}
+      .text-xs {{ font-size: .75rem; }}
+      .text-sm {{ font-size: .875rem; }}
+      .italic {{ font-style: italic; }}
+      footer {{ border-top: 1px solid #e2e8f0; padding-top: 1.5rem; color: #64748b; }}
+      @media print {{ body {{ background: white; }} main {{ padding: 0; }} article {{ break-inside: avoid; }} }}
+    </style>
   </head>
   <body class="bg-slate-50 text-slate-900 font-sans">
     <main class="max-w-5xl mx-auto px-6 py-12 space-y-12">
 {body}
     </main>
-    <script type="module">
-      import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-      mermaid.initialize({{ startOnLoad: true, securityLevel: 'strict' }});
-    </script>
   </body>
 </html>
 """
@@ -261,14 +294,10 @@ def _render_overview(overview: str) -> str:
 
 
 def _render_dfd(dfd_mermaid: str) -> str:
-    """Render the system-level Data Flow Diagram as a Mermaid block.
-
-    Escapes the diagram source — LLM-generated, so treat as untrusted markup
-    even though Mermaid would re-escape internally. The CDN-loaded Mermaid
-    runtime in the scaffold picks up `.mermaid` blocks on startup.
-    """
+    """Show model-generated Mermaid as escaped source without executing it."""
     return f"""      <section id="data-flow-diagram" class="space-y-3">
         <h2 class="{_CAPTION}">Data Flow Diagram</h2>
+        <p class="text-sm">Mermaid source (render separately in a trusted offline viewer).</p>
         <div class="rounded-lg bg-white ring-1 ring-slate-200 p-4 overflow-auto">
           <pre class="mermaid">{html.escape(dfd_mermaid)}</pre>
         </div>
