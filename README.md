@@ -280,7 +280,7 @@ Before exposing the UI, put it behind TLS and an identity-aware proxy. See [Depl
 - **Threat models are sensitive.** A report is a map of your weaknesses: store and share it like one.
 - **Team deployments need hardening.** See [Deployment hardening](docs/deployment-hardening.md).
 
-Dependencies are pinned in `uv.lock`, scanned with Bandit, CodeQL, pip-audit, Gitleaks and Trivy. [SECURITY.md](SECURITY.md) has the full policy. Report vulnerabilities via [private advisory](https://github.com/mrwadams/stride-gpt/security/advisories/new).
+Dependencies are pinned in `uv.lock`, scanned with Bandit, CodeQL, pip-audit, Gitleaks and Trivy. Use the [security policy](SECURITY.md#reporting-a-vulnerability) to route a private report to the maintainers of the affected code.
 
 ## Repository layout
 

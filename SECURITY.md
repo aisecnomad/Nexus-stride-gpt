@@ -12,15 +12,12 @@ Always use the latest version of STRIDE GPT for the best security.
 
 ## Reporting a Vulnerability
 
-We take the security of STRIDE GPT seriously. If you discover a security vulnerability, please follow these steps:
+Choose **Report a vulnerability** on the Security tab for the affected code.
 
-1. **Do Not** open a public GitHub issue for the vulnerability.
-2. Email your findings to the project maintainers via GitHub (use the Security tab to report privately).
-3. Provide detailed information including:
-   - Description of the vulnerability
-   - Steps to reproduce the issue
-   - Potential impact
-   - Suggested fix (if available)
+- For a change specific to Nexus, use the [Nexus Security tab](https://github.com/aisecnomad/Nexus-stride-gpt/security).
+- If the issue also affects upstream STRIDE-GPT, use the [upstream Security tab](https://github.com/mrwadams/stride-gpt/security).
+
+Include the affected revision, reproduction steps, impact and any proposed fix in the private report. Keep details out of public branches, commits, issues and pull requests until a fix is released. See the [security workflow](docs/nexus-workflow.md#security) for how maintainers coordinate fixes.
 
 We will acknowledge receipt of your vulnerability report within 48 hours and will send a more detailed response within 5 business days indicating the next steps in handling your report.
 

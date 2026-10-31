@@ -7,8 +7,8 @@ Thanks for helping. Pull requests are welcome; for a large change, open an issue
 STRIDE-GPT uses [uv](https://docs.astral.sh/uv/), and `uv.lock` is the single source of truth for dependencies.
 
 ```bash
-git clone https://github.com/mrwadams/stride-gpt.git
-cd stride-gpt
+git clone https://github.com/aisecnomad/Nexus-stride-gpt.git
+cd Nexus-stride-gpt
 uv sync                      # CLI, web UI and dev dependencies
 uv run stride-gpt --version
 uv run streamlit run apps/web/main.py
@@ -54,4 +54,4 @@ python scripts/build_control_catalog.py --check   # generated cards and docs are
 
 ## Security issues
 
-Please don't open public issues for vulnerabilities. Use GitHub's [private vulnerability reporting](https://github.com/mrwadams/stride-gpt/security/advisories/new); see [SECURITY.md](SECURITY.md).
+Report vulnerabilities privately. The [security policy](SECURITY.md#reporting-a-vulnerability) identifies the reporting channel for Nexus-only changes and code shared with upstream.
