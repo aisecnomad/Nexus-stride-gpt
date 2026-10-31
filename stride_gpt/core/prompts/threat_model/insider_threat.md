@@ -28,16 +28,18 @@ Modern frontier agents now match the four classical preconditions for insider th
 
 ## Deployment archetypes (autonomy levels)
 
-These are local deployment archetypes extending the AI Insider Threat model with L0 and L5, not a normative mapping to CSA levels. The parenthesized labels describe indicative agency exposure, not a severity score: assess privileges, data, impact and enforcement independently.
+Use the six-level **ShadowScan autonomy scale** (`shadowscan.autonomy/v1`), aligned with Emmanuel Dahunsi's *Treat AI Agents As High-Privilege Insiders, Not Chatbots*. These levels describe behaviour and oversight, not severity. Assess privileges, data sensitivity, exposure, consequences and enforcement separately. This is not a numeric crosswalk to CSA or the original AI Insider Threat archetypes.
 
-- **L0 — No Autonomy (INFORMATION ONLY)**: The AI provides information, analysis or recommendations; a human executes external actions. No autonomous action authority does not mean no risk: assess sensitive-data disclosure, prompt injection, unsafe output consumption and model/software supply-chain compromise.
-- **L1 — Human-as-Operator (LOW)**: Human approves every action before execution. Main residual risk is reviewer fatigue.
-- **L2 — Human-as-Collaborator (MEDIUM)**: Agent acts within scoped boundaries; auto-approved actions are the soft underbelly.
-- **L3 — Human-as-Supervisor (HIGH)**: Agent runs autonomously per task; human reviews outputs not actions. All five categories below are live during the task window.
-- **L4 — Human-as-Auditor (CRITICAL)**: Continuous or triggered execution with persistent access; humans review logs periodically. Mirrors the long-tenured trusted employee — the most dangerous classical insider archetype.
-- **L5 — Fully Autonomous (EXTREME)**: Persistent, self-directed agent with no human in the loop. Sets its own goals, acquires resources, spawns sub-agents. Full insider threat surface at machine speed with no oversight friction.
+- **L0 — Chatbot**: Answers only; no tools or actions. A person starts every exchange.
+- **L1 — Copilot**: Assists a person inside their session: drafts, suggests or retrieves with read-only tools. The person performs or confirms every action.
+- **L2 — Supervised**: A person starts the run and approves each side-effecting tool action before execution.
+- **L3 — Semi-Autonomous / Agentic Workflow**: Runs a bounded multi-step workflow or model-driven loop; approval happens at checkpoints, not per action. May be event-triggered.
+- **L4 — High Autonomy**: The model plans and acts in a loop with write or execution capabilities and no per-action approval; people supervise by exception.
+- **L5 — Fully Autonomous**: Starts itself through an event, schedule or another agent, acts with write, execute or delegated capabilities and no approval gates; people only monitor.
 
-If the deployment archetype is unclear from the code, assume L2/L3 for any system with tool-use capability or persistent credentials. Information-only systems with no autonomous external action authority are L0; self-directed agents that set their own goals are L5. Do not classify a tool as L0 merely because it has one function if it can perform privileged external actions. L5 is a high-risk research endpoint; autonomous safeguards do not replace required human authorization for consequential actions.
+Set `autonomy_level` only when the description or evidence establishes the applicable behaviour, approval scope and initiation. **When these are unknown, omit `autonomy_level` and identify the missing evidence in `improvement_suggestions`; do not assume L2/L3 or classify unknown as L0.** Tool access, persistent credentials, a schedule or an agent framework name alone do not establish a level. Read-only retrieval within a person's session is L1, not L0 or L2. Per-action approval of side effects is L2; checkpoint approval is L3. A scheduled workflow with an approval gate is not L5; L5 needs both self-initiation and ungated side-effecting authority. Autonomous safeguards do not replace authorization required by policy: retain the gate or prohibit the action, then classify the resulting behaviour.
+
+Taxonomy reference: https://github.com/aisecnomad/Nexus-ShadowScan/blob/main/docs/concepts/autonomy.md. Older STRIDE-GPT assessments used different L1–L4 meanings; reassess them rather than relabelling their numbers.
 
 ## The five threat categories
 

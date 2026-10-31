@@ -24,6 +24,7 @@ from stride_gpt.agent.tools import (
     THREAT_ARG_TO_FIELD,
     execute_tool,
 )
+from stride_gpt.core.autonomy import normalize_generated_autonomy
 from stride_gpt.core.controls import split_control_ids
 from stride_gpt.core.json_extract import extract_json_object
 from stride_gpt.core.llm import call_llm, call_llm_with_tools
@@ -221,7 +222,7 @@ def run_analysis(
 
     # Report token budget so the user knows what context limit is in effect
     progress.token_budget(models.worker.model_name, ctx.context_window, source=ctx.budget_source.value)
-    if models.tiered:
+    if models.architect is not None:
         from stride_gpt.config import friendly_provider
 
         architect = models.architect
@@ -600,8 +601,8 @@ def _build_metadata(
     meta: dict[str, Any] = {
         "worker_model": models.worker.model_name,
         "worker_provider": models.worker.provider,
-        "architect_model": models.architect.model_name if models.tiered else None,
-        "architect_provider": models.architect.provider if models.tiered else None,
+        "architect_model": models.architect.model_name if models.architect is not None else None,
+        "architect_provider": models.architect.provider if models.architect is not None else None,
         "app_type": plan.detected_app_type,
         "llm_calls": llm_calls,
         "tool_calls": tool_calls,
@@ -831,7 +832,7 @@ class _SubsystemRun:
             value = _threat_arg(args, arg)
             if value not in (None, "", []):
                 threat[field] = value
-        threat = normalize_threat_mitre(threat)
+        threat = normalize_generated_autonomy(normalize_threat_mitre(threat))
         controls_note = _apply_control_ids(threat)
 
         checks = verify_evidence(self.target_path, args.get("evidence"))
@@ -917,7 +918,9 @@ class _SubsystemRun:
         if not self.threats:
             threats = data.get("threats")
             if isinstance(threats, list):
-                self.threats.extend(t for t in threats if isinstance(t, dict))
+                self.threats.extend(
+                    normalize_generated_autonomy(t) for t in threats if isinstance(t, dict)
+                )
         suggestions = data.get("improvement_suggestions")
         if isinstance(suggestions, list):
             self.suggestions.extend(str(s) for s in suggestions if s)
@@ -1235,7 +1238,7 @@ def classify_synthesis(
         entry["Classification"] = kind
         # The architect gets no tool result to learn from, so the note is
         # discarded; an invented ID is simply not recorded.
-        entry.update(normalize_threat_mitre(entry))
+        entry = normalize_generated_autonomy(normalize_threat_mitre(entry))
         _apply_control_ids(entry)
 
         if kind == AGGREGATION:
@@ -1352,7 +1355,10 @@ def _synthesize(
 
     if data is None:
         return []
-    return data.get("cross_cutting_threats", [])
+    threats = data.get("cross_cutting_threats", [])
+    if not isinstance(threats, list):
+        return []
+    return [threat for threat in threats if isinstance(threat, dict)]
 
 
 def _generate_system_dfd(

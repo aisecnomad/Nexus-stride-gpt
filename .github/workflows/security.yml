@@ -117,14 +117,28 @@ jobs:
     permissions:
       contents: read
       security-events: write
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
 
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Build Docker image
         run: docker build -f Dockerfile.ui -t stride-gpt:${{ github.sha }} .
+
+      - name: Verify runtime imports and exclude build tools
+        run: |
+          docker run --rm --entrypoint /home/appuser/venv/bin/python stride-gpt:${{ github.sha }} -c '
+          import importlib.util
+          from pathlib import Path
+          import streamlit
+          import PIL
+          import stride_gpt.core.drawio_parser
+          assert importlib.util.find_spec("uv") is None
+          assert not any(Path("/home/appuser/venv/bin", name).exists() for name in ("uv", "uvx"))
+          '
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
@@ -249,10 +263,10 @@ jobs:
             test "$result" = success || exit 1
           done
           # Require event-specific checks when they are expected to run. A
-          # skipped PR dependency review or push image scan is not success.
+          # skipped PR dependency review or expected image scan is not success.
           case "$EVENT_NAME" in
             pull_request)
-              test "$DEPENDENCY_REVIEW" = success && test "$DOCKER_SECURITY" = skipped || exit 1 ;;
+              test "$DEPENDENCY_REVIEW" = success && test "$DOCKER_SECURITY" = success || exit 1 ;;
             push|workflow_dispatch)
               test "$DEPENDENCY_REVIEW" = skipped && test "$DOCKER_SECURITY" = success || exit 1 ;;
             schedule)

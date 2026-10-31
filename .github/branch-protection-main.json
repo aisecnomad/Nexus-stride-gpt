@@ -3,9 +3,12 @@
     "strict": true,
     "contexts": [
       "Lint (ruff)",
+      "Type check (mypy)",
       "Test (Python 3.12)",
       "Test (Python 3.13)",
       "Test (Python 3.14)",
+      "Package (installed wheel)",
+      "Lane guard",
       "Security Scan Summary"
     ]
   },

@@ -11,6 +11,9 @@ from xml.etree.ElementTree import ParseError
 from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring as _safe_fromstring
 
+MAX_DRAWIO_CHARS = 1_000_000
+MAX_DRAWIO_CELLS = 2_000
+
 
 def parse_drawio_xml(xml: str) -> dict:
     """Extract components, connections, and trust boundaries from draw.io XML.
@@ -23,6 +26,8 @@ def parse_drawio_xml(xml: str) -> dict:
         }
     All lists are empty on parse error.
     """
+    if len(xml) > MAX_DRAWIO_CHARS:
+        return {"components": [], "connections": [], "trust_boundaries": []}
     try:
         # defusedxml blocks entity-expansion / DTD / external-entity attacks on
         # this untrusted, user-supplied XML; malformed input raises ParseError.
@@ -36,6 +41,8 @@ def parse_drawio_xml(xml: str) -> dict:
         return {"components": [], "connections": [], "trust_boundaries": []}
 
     cells = graph_model.findall(".//mxCell")
+    if len(cells) > MAX_DRAWIO_CELLS:
+        return {"components": [], "connections": [], "trust_boundaries": []}
 
     # Build id → (label, parent, style) lookup
     id_label: dict[str, str] = {}

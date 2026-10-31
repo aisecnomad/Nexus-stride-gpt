@@ -10,6 +10,7 @@ from unittest.mock import Mock
 
 import pytest
 import streamlit as st
+from PIL import Image
 from streamlit.testing.v1 import AppTest
 
 from stride_gpt.models import PROVIDERS
@@ -294,7 +295,8 @@ def test_uploaded_dfd_updates_editor_and_detects_same_name_size_replacement(web_
     app.selectbox(key="model_provider").select("Google AI API")
     _run(app)
     original_uploader = st.file_uploader
-    current_upload = io.BytesIO(b"first-image-bytes")
+    current_upload = io.BytesIO()
+    Image.new("RGB", (1, 1), "red").save(current_upload, format="PNG")
     current_upload.name = "diagram.png"
     current_upload.type = "image/png"
 
@@ -315,7 +317,8 @@ def test_uploaded_dfd_updates_editor_and_detects_same_name_size_replacement(web_
     _run(app)
     assert app.session_state["confirmed_dfd"] == DFD
 
-    current_upload = io.BytesIO(b"other-image-bytes")
+    current_upload = io.BytesIO()
+    Image.new("RGB", (1, 1), "blue").save(current_upload, format="PNG")
     current_upload.name = "diagram.png"
     current_upload.type = "image/png"
     _run(app)
@@ -335,3 +338,46 @@ def test_model_markdown_cannot_render_remote_images_or_links(web_app):
     rendered = "\n".join(node.value for node in app.markdown)
     assert "attacker.invalid" not in rendered
     assert "## Threats" in rendered
+
+
+def test_agentic_description_shows_shadow_scan_autonomy_guidance(web_app):
+    app = _run(web_app)
+    app.selectbox(key="app_type").select("Agentic AI application")
+    app = _run(app)
+    assert any(e.label == "Autonomy levels (ShadowScan L0-L5)" for e in app.expander)
+    content = "\n".join(m.value for m in app.markdown)
+    assert "| L0 | Chatbot |" in content
+    assert "| L1 | Copilot |" in content
+    assert "| L2 | Supervised |" in content
+    assert "| L5 | Fully Autonomous |" in content
+
+
+@pytest.mark.parametrize("uploader_key", [None, "dfd_image_uploader"])
+def test_invalid_diagram_upload_never_reaches_provider(web_app, monkeypatch, uploader_key):
+    import dfd
+    import threat_model
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "fake-server-key")
+    image_provider = Mock()
+    dfd_provider = Mock()
+    monkeypatch.setattr(threat_model, "get_image_analysis_google", image_provider)
+    monkeypatch.setattr(dfd, "get_dfd_from_image_google", dfd_provider)
+    app = _run(web_app)
+    app.selectbox(key="model_provider").select("Google AI API")
+    _run(app)
+    original_uploader = st.file_uploader
+    uploaded = io.BytesIO(b"forged-upload-not-an-image")
+    uploaded.name = "diagram.png"
+    uploaded.type = "image/png"
+
+    def upload(label, *args, **kwargs):
+        if kwargs.get("key") == uploader_key:
+            assert kwargs["max_upload_size"] == 10
+            return uploaded
+        return original_uploader(label, *args, **kwargs)
+
+    monkeypatch.setattr(st, "file_uploader", upload)
+    _run(app)
+    image_provider.assert_not_called()
+    dfd_provider.assert_not_called()
+    assert any("valid PNG or JPEG" in error.value for error in app.error)

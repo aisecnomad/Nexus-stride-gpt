@@ -283,6 +283,13 @@ class TestFromJsonRenderers:
 
 
 class TestReportPersistence:
+    @pytest.mark.parametrize("payload", [[], None, True, "report"])
+    def test_non_object_report_is_rejected(self, tmp_path, payload):
+        path = tmp_path / "report.json"
+        path.write_text(json.dumps(payload))
+        with pytest.raises(ValueError, match="JSON object"):
+            load_report(path)
+
     def test_save_and_load(self, sample_report: AnalysisReport, tmp_path: Path):
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr("stride_gpt.config.REPORTS_DIR", tmp_path)

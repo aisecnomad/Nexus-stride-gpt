@@ -1,14 +1,17 @@
 """Streamlit custom component that embeds the diagrams.net editor.
 
-The component returns a dict  {action: "save"|"close", xml: str}
+The component returns a dict  {action: "save"|"close", xml: str} (or an error dict)
 when the user saves or cancels, and None while the editor is idle.
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 import streamlit.components.v1 as components
+
+from stride_gpt.core.drawio_parser import MAX_DRAWIO_CHARS
 
 _FRONTEND = str(Path(__file__).parent / "frontend")
 _component_func = components.declare_component("drawio_editor", path=_FRONTEND)
@@ -27,7 +30,14 @@ def _resolve_drawio_url() -> str:
     deployments; the embed query params are appended automatically.
     """
     host = os.environ.get("STRIDE_GPT_DRAWIO_URL", _DEFAULT_DRAWIO_HOST).strip().rstrip("/")
-    return f"{host}/{_EMBED_PARAMS}"
+    parsed = urlsplit(host)
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.username is not None
+            or parsed.password is not None or parsed.query or parsed.fragment
+            or parsed.path not in ("", "/")):
+        raise ValueError("STRIDE_GPT_DRAWIO_URL must be an HTTPS origin without credentials or a path.")
+    # Accessing port also rejects malformed ports instead of deferring to the browser.
+    _ = parsed.port
+    return urlunsplit(("https", parsed.netloc, "/", _EMBED_PARAMS[1:], ""))
 
 
 def drawio_editor_component(xml: str = "", key: str | None = None) -> dict | None:
@@ -40,8 +50,19 @@ def drawio_editor_component(xml: str = "", key: str | None = None) -> dict | Non
     Returns:
         None while the editor is open and the user hasn't acted.
         {"action": "save", "xml": "<mxGraphModel...>"}  on save.
-        {"action": "close", "xml": "<last known xml>"}  on cancel.
+        {"action": "close", "xml": ""}  on cancel.
+        {"action": "error", "error": "..."} for an invalid or oversized save.
     """
-    return _component_func(
+    result = _component_func(
         xml=xml, drawio_url=_resolve_drawio_url(), key=key, default=None
     )
+    if not isinstance(result, dict):
+        return None
+    if result.get("action") == "close":
+        return {"action": "close", "xml": ""}
+    if result.get("action") != "save":
+        return None
+    diagram = result.get("xml")
+    if not isinstance(diagram, str) or len(diagram) > MAX_DRAWIO_CHARS:
+        return {"action": "error", "error": "The diagram is invalid or exceeds one million characters."}
+    return {"action": "save", "xml": diagram}

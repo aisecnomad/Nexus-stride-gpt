@@ -68,16 +68,18 @@ flowchart LR
 
 ## Autonomy levels
 
-STRIDE-GPT uses a local six-level deployment taxonomy: the AI Insider Threat archetypes extended with L0 and L5. It is not a normative mapping to CSA's [autonomy proposal](https://cloudsecurityalliance.org/blog/2026/01/28/levels-of-autonomy); for example, CSA L2 means plan approval. Autonomy informs control selection alongside data sensitivity, permissions, impact and exposure.
+STRIDE-GPT uses the same six-level scale as [Nexus-ShadowScan](https://github.com/aisecnomad/Nexus-ShadowScan/blob/main/docs/concepts/autonomy.md), from **L0 Chatbot** to **L5 Fully Autonomous** (`shadowscan.autonomy/v1`). It describes action authority, approval scope and initiation; it is not a severity score or a numeric crosswalk to another framework. Autonomy informs control selection alongside data sensitivity, permissions, impact and exposure.
 
-| Level | Archetype | Human role | Risk |
-|-------|-----------|------------|------|
-| **L0** | No Autonomy | Provides information or recommendations; humans execute external actions | Data, output and supply-chain risks remain |
-| **L1** | Human-as-Operator | Approves every action before it runs | Low |
-| **L2** | Human-as-Collaborator | Agent acts within scoped boundaries; some actions auto-approved | Medium |
-| **L3** | Human-as-Supervisor | Agent runs autonomously per task; human reviews outputs | High |
-| **L4** | Human-as-Auditor | Continuous execution with persistent access; periodic log review | Critical |
-| **L5** | Fully Autonomous | Self-directed agent; sets own goals, acquires resources, no human in the loop | Extreme |
+| Level | Name | Behaviour and oversight |
+|-------|------|-------------------------|
+| **L0** | Chatbot | Answers only; no tools or actions. A person starts every exchange. |
+| **L1** | Copilot | Assists a person in their session: drafts, suggests or retrieves with read-only tools. The person performs or confirms every action. |
+| **L2** | Supervised | A person starts the run and approves each side-effecting tool action before execution. |
+| **L3** | Semi-Autonomous / Agentic Workflow | Bounded multi-step workflow or model-driven loop; approval at checkpoints, not per action. May be event-triggered. |
+| **L4** | High Autonomy | Model plans and acts in a loop with write or execution capabilities and no per-action approval; people supervise by exception. |
+| **L5** | Fully Autonomous | Self-started by event, schedule or another agent; write, execute or delegated capabilities with no approval gates; people only monitor. |
+
+Report a level only when approval and initiation evidence support it. Tool access or credentials alone do not justify L2/L3, and unknown is not L0. A scheduled flow with checkpoint approval remains L3, not L5. Earlier STRIDE-GPT reports used different L1–L4 meanings: reassess their behaviour before comparing them with this scale. New model-output threats with a valid level carry `autonomy_taxonomy: "shadowscan.autonomy/v1"`. This identifies the vocabulary, not verified evidence; loading a historical report does not add or change that marker.
 
 The [agentic AI controls](docs/agentic-ai-controls.md) baseline scales 14 controls (AGT-01 to AGT-14) by level. The [AI Insider Threat](stride_gpt/core/prompts/threat_model/insider_threat.md) lens treats agents L3+ as potentially untrusted insiders.
 

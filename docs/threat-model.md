@@ -68,7 +68,7 @@ This is a review model, not a certification or a claim that deployment controls 
 
 | Threat | Component | Existing Controls | Residual Risk |
 |--------|-----------|-------------------|---------------|
-| Agent escapes file boundaries or exposes host secrets | Tools | Confined reads, path/content filters and bounded tool dispatch in hardened builds | The CLI shares its OS principal with the operator. Run in a container/VM with only the sanitized target and required credentials; file confinement is not OS isolation. |
+| Agent escapes file boundaries or exposes host secrets | Tools | Confined reads, path/content filters and bounded tool dispatch in hardened builds; resume status checks disable repository-configured filesystem monitor commands | The CLI shares its OS principal with the operator. Run in a container/VM with only the sanitized target and required credentials; file confinement is not OS isolation. |
 | Web UI container breakout | Docker | Non-root image user; Compose adds capability drop and `no-new-privileges` | Compose settings do not automatically apply to other launch methods. Kernel/dependency vulnerabilities remain; enforce host isolation and patching. |
 | Prompt injection that causes the model to recommend dangerous mitigations | Synthesis | Control catalogue constrains IDs; human review expected | Medium |
 

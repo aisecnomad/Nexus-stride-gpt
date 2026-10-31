@@ -5,6 +5,7 @@ from __future__ import annotations
 import json as _json
 import re
 import time
+from typing import TypedDict
 
 import litellm
 
@@ -174,7 +175,7 @@ def _retry_delay(exc: Exception, attempt: int) -> float:
         retry_after = None
     if retry_after is not None and retry_after >= 0:
         return min(retry_after, MAX_RETRY_DELAY)
-    return min(2.0 * 2**attempt, MAX_RETRY_DELAY)
+    return float(min(2.0 * 2**attempt, MAX_RETRY_DELAY))
 
 
 def _completion(**kwargs):
@@ -189,7 +190,14 @@ def _completion(**kwargs):
     return litellm.completion(**kwargs)
 
 
-def _extract_usage(response) -> dict[str, int | None]:
+class _UsageFields(TypedDict):
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    cached_prompt_tokens: int | None
+    uncached_prompt_tokens: int | None
+
+
+def _extract_usage(response) -> _UsageFields:
     """Pull token usage off a raw provider response, as ``LLMResponse`` fields.
 
     Returns ``prompt_tokens``, ``completion_tokens``, ``cached_prompt_tokens``
@@ -208,7 +216,7 @@ def _extract_usage(response) -> dict[str, int | None]:
     actually happened always consumed prompt tokens, so an all-zero usage is
     "the provider didn't say", not "the call was free".
     """
-    unknown: dict[str, int | None] = {
+    unknown: _UsageFields = {
         "prompt_tokens": None,
         "completion_tokens": None,
         "cached_prompt_tokens": None,

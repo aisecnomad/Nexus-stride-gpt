@@ -88,7 +88,7 @@ def _parse_attack_tree_response(content: str) -> str:
         return extract_mermaid_code(content)
 
 
-def convert_tree_to_mermaid(tree_data):
+def convert_tree_to_mermaid(tree_data) -> str:
     """
     Convert structured tree data to Mermaid syntax.
 

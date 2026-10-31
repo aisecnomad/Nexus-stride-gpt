@@ -831,10 +831,13 @@ def is_git_dirty(target: Path, *, ignore: Path | None = None) -> bool:
     file that makes resume possible is the untracked file that makes resume
     refuse, and the only way through is ``--force``, which also switches off
     the "the code moved on" protection this check exists to give.
+
+    Disable repository-configured filesystem monitors: Git otherwise executes
+    ``core.fsmonitor`` as a command even for this read-only status inspection.
     """
     try:
         result = subprocess.run(
-            ["git", "-C", str(target), "status", "--porcelain"],
+            ["git", "-c", "core.fsmonitor=false", "-C", str(target), "status", "--porcelain"],
             capture_output=True,
             check=False,
             text=True,

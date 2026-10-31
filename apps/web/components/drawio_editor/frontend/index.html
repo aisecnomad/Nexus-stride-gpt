@@ -85,7 +85,7 @@
     var pendingSave   = false;  // we fired an export request and are awaiting the result
     var hasLoaded     = false;  // at least one load has been issued into the editor
     var lastLoadedXml = null;   // XML string most recently loaded (dedupes reloads)
-    var DRAWIO_ORIGIN = "*";    // postMessage target origin; set from the configured URL
+    var DRAWIO_ORIGIN = null;    // postMessage target origin; set from the configured URL
     var frameSrcSet   = false;  // iframe src assigned yet
 
     var BLANK_XML = [
@@ -98,6 +98,7 @@
     ].join("\n");
 
     function postToDrawio(msg) {
+      if (!DRAWIO_ORIGIN) return;
       drawioFrame.contentWindow.postMessage(JSON.stringify(msg), DRAWIO_ORIGIN);
     }
 
@@ -106,8 +107,12 @@
        Runs once, from the first Streamlit render. */
     function ensureFrame(url) {
       if (frameSrcSet || !url) return;
+      try {
+        var editorUrl = new URL(url);
+        if (editorUrl.protocol !== "https:" || editorUrl.username || editorUrl.password) return;
+        DRAWIO_ORIGIN = editorUrl.origin;
+      } catch (_) { return; }
       frameSrcSet = true;
-      try { DRAWIO_ORIGIN = new URL(url).origin; } catch (_) { DRAWIO_ORIGIN = "*"; }
       drawioFrame.src = url;
     }
 
@@ -142,7 +147,7 @@
          NB: the *incoming* render forward message does NOT carry
          isStreamlitMessage (only messages we SEND must set it), so we key off
          type alone. args is normally an object but guard for a JSON string. */
-      if (data && typeof data === "object" && data.type === "streamlit:render") {
+      if (evt.source === window.parent && data && typeof data === "object" && data.type === "streamlit:render") {
         var args = data.args;
         if (typeof args === "string") {
           try { args = JSON.parse(args); } catch (_) { args = {}; }
@@ -168,7 +173,7 @@
       /* --- draw.io → component: JSON string events --- */
       if (typeof data !== "string") return;
       /* Only trust string messages from the configured draw.io origin. */
-      if (DRAWIO_ORIGIN !== "*" && evt.origin !== DRAWIO_ORIGIN) return;
+      if (!DRAWIO_ORIGIN || evt.origin !== DRAWIO_ORIGIN || evt.source !== drawioFrame.contentWindow) return;
       var msg;
       try { msg = JSON.parse(data); } catch (_) { return; }
 

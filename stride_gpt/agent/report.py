@@ -527,10 +527,10 @@ def save_quick_report(
         metadata["worker_model"] = models.worker.model_name
         metadata["worker_provider"] = models.worker.provider
         metadata["architect_model"] = (
-            models.architect.model_name if models.tiered else None
+            models.architect.model_name if models.architect is not None else None
         )
         metadata["architect_provider"] = (
-            models.architect.provider if models.tiered else None
+            models.architect.provider if models.architect is not None else None
         )
     if app_type_hint:
         metadata["app_type_hint"] = app_type_hint
@@ -586,7 +586,10 @@ def _write_html_companion(json_path: Path, data: dict[str, Any]) -> None:
 
 def load_report(path: Path) -> dict[str, Any]:
     """Load a saved report JSON file. Returns the parsed dict."""
-    return json.loads(path.read_text())
+    data = json.loads(path.read_text())
+    if not isinstance(data, dict):
+        raise ValueError("Saved report must be a JSON object")
+    return data
 
 
 def list_reports(

@@ -1,5 +1,5 @@
 # Streamlit web UI image for STRIDE-GPT.
-# The CLI is published to PyPI (`pip install stride-gpt`); no separate CLI image.
+# Build from this checkout; Nexus does not yet publish its own CLI package or image.
 
 FROM python:3.12-slim@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704
 
@@ -37,7 +37,9 @@ RUN ${VIRTUAL_ENV}/bin/pip install --no-cache-dir --upgrade pip uv && \
     ${VIRTUAL_ENV}/bin/uv export --frozen --no-dev --no-emit-project \
         -o /tmp/requirements.lock && \
     ${VIRTUAL_ENV}/bin/pip install --no-cache-dir --require-hashes -r /tmp/requirements.lock && \
-    ${VIRTUAL_ENV}/bin/pip check
+    ${VIRTUAL_ENV}/bin/pip check && \
+    ${VIRTUAL_ENV}/bin/pip uninstall --yes uv && \
+    rm -f /tmp/requirements.lock
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8501/_stcore/health', timeout=4).status == 200 else 1)" || exit 1

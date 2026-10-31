@@ -720,3 +720,50 @@ def test_known_credential_markers_are_not_returned(sandbox_dir):
     (sandbox_dir / "settings.py").write_text(value)
     assert value not in read_file(sandbox_dir, "settings.py")
     assert value not in grep_content(sandbox_dir, "AKIA")
+
+
+def test_grep_marks_unsupported_confined_reads_incomplete(tmp_path, monkeypatch):
+    from stride_gpt.agent import tools as agent_tools
+
+    (tmp_path / "app.py").write_text("vulnerable source sentinel")
+    monkeypatch.setattr(agent_tools.os, "supports_dir_fd", set())
+    result = json.loads(grep_content(tmp_path, "vulnerable"))
+    assert len(result) == 1
+    assert result[0]["truncated"] is True
+    assert result[0]["reason"] == "confined_reads_unavailable"
+    assert "no source files were searched" in result[0]["message"]
+
+
+def test_grep_preserves_matches_and_reports_failed_source_reads(tmp_path, monkeypatch):
+    from stride_gpt.agent import tools as agent_tools
+
+    (tmp_path / "good.py").write_text("vulnerable good source")
+    (tmp_path / "unreadable.py").write_text("vulnerable unreadable source")
+    read = agent_tools.read_confined_text
+
+    def fail_one(root, path, **kwargs):
+        if path == "unreadable.py":
+            raise OSError("simulated unsafe or unreadable source")
+        return read(root, path, **kwargs)
+
+    monkeypatch.setattr(agent_tools, "read_confined_text", fail_one)
+    result = json.loads(grep_content(tmp_path, "vulnerable"))
+    assert result[0]["file"] == "good.py"
+    assert result[-1]["truncated"] is True
+    assert result[-1]["reason"] == "source_read_errors"
+    assert result[-1]["unreadable_files_skipped"] == 1
+    assert "unreadable source" not in json.dumps(result)
+
+
+def test_grep_reports_failed_directory_enumeration(tmp_path, monkeypatch):
+    from stride_gpt.agent import tools as agent_tools
+
+    def fail_walk(path, *, onerror):
+        onerror(PermissionError("simulated inaccessible directory"))
+        return iter(())
+
+    monkeypatch.setattr(agent_tools.os, "walk", fail_walk)
+    result = json.loads(grep_content(tmp_path, "vulnerable"))
+    assert result[-1]["truncated"] is True
+    assert result[-1]["reason"] == "source_read_errors"
+    assert result[-1]["unreadable_directories_skipped"] == 1

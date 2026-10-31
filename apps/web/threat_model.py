@@ -88,16 +88,16 @@ def create_image_analysis_prompt():
 
 
 # Function to get analyse uploaded architecture diagrams.
-def get_image_analysis(api_key, model_name, prompt, base64_image):
+def get_image_analysis(api_key, model_name, prompt, base64_image, media_type="image/jpeg"):
     config = LLMConfig(provider="OpenAI API", model_name=model_name, api_key=api_key)
-    response = analyze_image(config, base64_image)
+    response = analyze_image(config, base64_image, media_type=media_type)
     return {"choices": [{"message": {"content": response.content}}]}
 
 
 # Function to get image analysis using Google Gemini models
-def get_image_analysis_google(api_key, model_name, prompt, base64_image):
+def get_image_analysis_google(api_key, model_name, prompt, base64_image, media_type="image/jpeg"):
     config = LLMConfig(provider="Google AI API", model_name=model_name, api_key=api_key)
-    response = analyze_image(config, base64_image)
+    response = analyze_image(config, base64_image, media_type=media_type)
     return {"choices": [{"message": {"content": response.content}}]}
 
 

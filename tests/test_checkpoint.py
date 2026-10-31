@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import os
+import shlex
+import shutil
+import subprocess
 from datetime import UTC, datetime
 
 import pytest
@@ -20,6 +24,26 @@ from stride_gpt.agent.persistence import (
     write_checkpoint,
 )
 from stride_gpt.core.schemas import AnalysisPlan, LLMConfig, ModelPair, Subsystem, SubsystemFinding
+
+
+@pytest.mark.skipif(os.name != "posix" or shutil.which("git") is None, reason="requires POSIX shell and git")
+def test_dirty_check_never_executes_repository_fsmonitor(tmp_path):
+    repo = tmp_path / "repository"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    marker = tmp_path / "monitor-executed"
+    monitor = tmp_path / "untrusted monitor"
+    monitor.write_text(f"#!/bin/sh\nprintf executed > {shlex.quote(str(marker))}\nprintf 'token\\0'\n")
+    monitor.chmod(0o700)
+    subprocess.run(
+        ["git", "-C", str(repo), "config", "core.fsmonitor", shlex.quote(str(monitor))],
+        check=True,
+    )
+
+    assert is_git_dirty(repo) is False
+    (repo / "app.py").write_text("changed source")
+    assert is_git_dirty(repo) is True
+    assert not marker.exists()
 
 # ---------------------------------------------------------------------------
 # compute_checkpoint_config_hash

@@ -248,7 +248,7 @@ def _query_lm_studio_context(api_base: str, model_name: str) -> int | None:
             if not loaded_instances:
                 continue
             loaded_ctx = loaded_instances[0].get("config", {}).get("context_length", 0)
-            if loaded_ctx > 0:
+            if isinstance(loaded_ctx, int) and loaded_ctx > 0:
                 return loaded_ctx
     except (httpx.HTTPError, KeyError, TypeError, ValueError):
         # Best-effort probe of the optional LM Studio server. If it is down or
