@@ -6,6 +6,9 @@ updates:
   # Monitor Python dependencies
   - package-ecosystem: "uv"
     directory: "/"
+    # Match the release-age limit used by uv when it resolves the lockfile.
+    cooldown:
+      default-days: 5
     schedule:
       interval: "weekly"
       day: "monday"
