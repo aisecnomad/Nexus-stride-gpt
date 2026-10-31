@@ -18,6 +18,8 @@ jobs:
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
     runs-on: ubuntu-latest
+    # v1 removes the action's timeout_minutes input; retain its 30-minute cap.
+    timeout-minutes: 30
     permissions:
       contents: read
       pull-requests: read
@@ -31,7 +33,7 @@ jobs:
 
       - name: Run Claude Code
         id: claude
-        uses: anthropics/claude-code-action@d70510b174a1244958df0b03166a54912811f3e6 # beta
+        uses: anthropics/claude-code-action@d70510b174a1244958df0b03166a54912811f3e6 # v1.0.264
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
 
