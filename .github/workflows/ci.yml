@@ -128,11 +128,20 @@ jobs:
           "$venv/python" - <<'PY'
           import os
           import pathlib
+          from importlib.metadata import requires
+          from importlib.resources import files
+
+          from packaging.requirements import Requirement
 
           import stride_gpt
-          from importlib.resources import files
           from stride_gpt.core.prompts.variants import list_references
 
+          # Wheel installs must reject a known affected regex even when a
+          # consumer's constraints would otherwise permit the older release.
+          requirements = [Requirement(value) for value in requires("stride-gpt") or []]
+          regex_requirement = next(req for req in requirements if req.name == "regex")
+          assert "2026.6.28" not in regex_requirement.specifier, regex_requirement
+          assert "2026.9.29" in regex_requirement.specifier, regex_requirement
           assert "site-packages" in stride_gpt.__file__, stride_gpt.__file__
           src = {p.name for p in pathlib.Path(os.environ["CARDS_SRC"]).glob("*.md")}
           pkg = {f.name for f in files("stride_gpt.core.prompts.threat_model").iterdir()}

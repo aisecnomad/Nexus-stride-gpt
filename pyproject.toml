@@ -25,7 +25,11 @@ dependencies = [
     "rich>=13.0",
     "prompt_toolkit>=3.0",
     "defusedxml>=0.7.1",
-    "regex>=2024.11.6",
+    # Model-supplied patterns compile in process. Upstream issue #611 documents
+    # a compile-time heap write fixed in 2026.8.31; use the reviewed 2026.9.29
+    # baseline, which also includes later native exception-handling fixes.
+    # https://github.com/mrabarnett/mrab-regex/issues/611
+    "regex>=2026.9.29",
     "markdown-it-py>=3.0",
 ]
 
